@@ -1,5 +1,6 @@
 """Public Jobs.ie and IrishJobs search pages; no login or challenge bypass."""
 import json
+import requests
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
@@ -96,6 +97,16 @@ def search_board(session, source):
             except ValueError:
                 failed_queries += 1
                 print(f"[PARTIAL] {source['provider']}: skipped search with unavailable result data")
+            except requests.RequestException:
+                # Stop after connection/access failures; don't hammer a blocked source.
+                # Keep pages already collected instead of discarding the whole board.
+                source['query_status'] = {'succeeded': succeeded_queries,
+                                          'failed_or_truncated': failed_queries + 1,
+                                          'aborted': True}
+                if not jobs:
+                    raise
+                print(f"[PARTIAL] {source['provider']}: connection/access failure; retaining collected pages")
+                return list(jobs.values())
     source['query_status'] = {'succeeded':succeeded_queries,'failed_or_truncated':failed_queries}
     if failed_queries and not jobs:
         raise ValueError('No usable job-board result data')

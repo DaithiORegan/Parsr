@@ -39,3 +39,31 @@ third-party scraping subscription or API credential has been added.
 
 Existing quiet baselines still apply to newly added sources; complete Discord
 reports include their current matching vacancies even on their first scan.
+
+## Troubleshooting unavailable sources
+
+Run **Actions → Diagnose job source access → Run workflow** in Parsr. This makes
+one bounded request per source on the same GitHub-hosted network as scheduled
+scans. It reports fixed status categories, without printing the key, request URL,
+response body, or any CV data. Repeated full scans consume API quota and are not
+a useful way to diagnose access denial.
+
+On 12 November 2026, Jooble returned HTTP 403 from GitHub with its secret present;
+the Irish endpoint matches Jooble's published API examples. This establishes an
+access refusal, not a missing secret or a proven invalid key. Ask Jooble API
+support to confirm the key is active for **Ireland (ie.jooble.org)** and whether
+account, website, quota or IP restrictions apply to the Parsr site and GitHub
+Actions requests. Do not paste the key into issues, chat, or logs. A specific
+restriction must be resolved through the provider, not worked around.
+
+Both IrishJobs and Jobs.ie timed out from GitHub during the same diagnostic,
+while their public search data returned HTTP 200 from the development workspace.
+The exact network-side cause remains unconfirmed. If that difference persists,
+scheduled collection requires a permitted host with working access or an
+approved provider feed/API. A successful manual check here does not repair the
+GitHub scheduler. Do not disable TLS verification or bypass browser challenges.
+
+A board connection/access error stops further requests to that board. Pages
+already collected are retained and the scan is marked partial; an initial
+failure remains a failure, never a successful empty scan. Older records remain
+searchable with their original last-seen timestamps.

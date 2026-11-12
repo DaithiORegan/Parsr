@@ -1,5 +1,6 @@
 import json
 import unittest
+import requests
 from unittest.mock import Mock, patch
 from job_monitor.boards import parse_results, search_board
 from job_monitor.workday import workday
@@ -72,3 +73,20 @@ class ExpandedSources(unittest.TestCase):
         with patch('job_monitor.boards.TERMS',('first','second')):
             self.assertEqual(len(search_board(session,source)),1)
         self.assertEqual(source['query_status']['failed_or_truncated'],1)
+
+    def test_connection_failure_retains_collected_page_and_stops(self):
+        item={'id':1,'title':'Security Analyst','companyName':'Example','location':'Cork','url':'/job/one'}
+        session=Mock();session.get.side_effect=[Mock(text=html([item],2)),requests.ConnectionError('closed')]
+        source={'provider':'irishjobs','slug':'ireland','company':'IrishJobs','search_areas':['cork']}
+        with patch('job_monitor.boards.TERMS',('first','second')):
+            rows=search_board(session,source)
+        self.assertEqual(len(rows),1)
+        self.assertEqual(session.get.call_count,2)
+        self.assertEqual(source['query_status']['failed_or_truncated'],1)
+        self.assertTrue(source['query_status']['aborted'])
+
+    def test_initial_connection_failure_is_not_empty_success(self):
+        session=Mock();session.get.side_effect=requests.ConnectionError('closed')
+        source={'provider':'jobsie','slug':'ireland','company':'Jobs.ie','search_areas':['cork']}
+        with patch('job_monitor.boards.TERMS',('first',)),self.assertRaises(requests.ConnectionError):
+            search_board(session,source)
