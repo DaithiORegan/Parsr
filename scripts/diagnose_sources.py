@@ -81,6 +81,14 @@ def main():
                       'category': response_category(response)}
             if response.status_code != 200:
                 result.update(response_evidence(response))
+            if name == 'Jooble Ireland' and response.status_code == 200:
+                try:
+                    data = response.json()
+                    if not isinstance(data, dict) or not isinstance(data.get('jobs'), list):
+                        raise ValueError('Unexpected job payload')
+                    result['sample_jobs'] = len(data['jobs'])
+                except ValueError:
+                    result['category'] = 'invalid_jobs_payload'
             if name != 'Jooble Ireland' and response.status_code == 200:
                 from job_monitor.boards import parse_results
                 try:

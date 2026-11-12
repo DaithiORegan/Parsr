@@ -49,3 +49,13 @@ class SourceDiagnostics(unittest.TestCase):
             main()
         self.assertEqual(request.call_count,1)
         self.assertEqual(json.loads(output.getvalue())['source'],'Jooble Ireland')
+
+    def test_jooble_200_must_contain_valid_job_payload(self):
+        for payload, expected in [({'jobs':[{'id':1}]},'reachable'), ({'error':'SENSITIVE_KEY'},'invalid_jobs_payload')]:
+            response=Mock(status_code=200,headers={},json=lambda:payload)
+            output=io.StringIO()
+            with patch.dict(os.environ,{'JOOBLE_API_KEY':'SENSITIVE_KEY','DIAGNOSTIC_SOURCE':'jooble'}), \
+                 patch('scripts.diagnose_sources.requests.request',return_value=response),redirect_stdout(output):
+                main()
+            self.assertEqual(json.loads(output.getvalue())['category'],expected)
+            self.assertNotIn('SENSITIVE_KEY',output.getvalue())

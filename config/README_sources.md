@@ -56,6 +56,13 @@ account, website, quota or IP restrictions apply to the Parsr site and GitHub
 Actions requests. Do not paste the key into issues, chat, or logs. A specific
 restriction must be resolved through the provider, not worked around.
 
+Later on the same day, replacing Parsr's `JOOBLE_API_KEY` secret restored HTTP 200
+from the unchanged Irish API endpoint. The Discord repository's key had already
+returned real listings there. Repository secrets are independent: saving a key in
+the Discord repository does not update Parsr. To verify a replacement, select
+`jooble` in the diagnostic workflow; it checks for an actual `jobs` array as well
+as HTTP 200. GitHub does not allow a saved secret's plaintext value to be read.
+
 Both IrishJobs and Jobs.ie timed out from GitHub during the same diagnostic,
 while their public search data returned HTTP 200 from the development workspace.
 The exact network-side cause remains unconfirmed. If that difference persists,
