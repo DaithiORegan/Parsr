@@ -12,7 +12,7 @@ export const ROLE_TYPES = [
 
   {id:'it-support',label:'IT Support / Helpdesk',terms:['it support','technical support','helpdesk','help desk','service desk','desktop support','deskside','it technician','support engineer']},
   {id:'soc',label:'SOC / Security Analyst',terms:['soc analyst','security analyst','security operations','incident response','threat analyst','cyber analyst']},
-  {id:'cybersecurity',label:'Cybersecurity / GRC',terms:['cyber','security engineer','grc','governance risk','penetration','information security','vulnerability','iam']},
+  {id:'cybersecurity',label:'Cybersecurity / GRC',terms:['cyber','cybersecurity','cybersec','it security','security specialist','information assurance','soc','security analyst','security operations','security engineer','security consultant','security awareness','grc','governance risk','penetration','information security','it compliance','incident response','vulnerability','threat intelligence','iam']},
   {id:'network',label:'Network Engineer / NOC',terms:['network engineer','network administrator','network technician','noc','network support','network analyst']},
   {id:'systems',label:'Systems Administrator',terms:['systems administrator','system administrator','sysadmin','it administrator','systems engineer','infrastructure engineer']},
   {id:'cloud',label:'Cloud Engineer / DevOps',terms:['cloud','devops','site reliability','sre','platform engineer','azure engineer','aws engineer']},
@@ -27,8 +27,9 @@ export function roleRelevance(job, id) {
   const type=ROLE_TYPES.find(t=>t.id===id);
   if(!type) return 0;
   const title=String(job.title||'').toLowerCase().replace(/[-/]/g,' ');
-  return type.terms.reduce((score,term)=>{
+  const relevance = type.terms.reduce((score,term)=>{
     const escaped=term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
     return score+(new RegExp('(?:^|\\W)'+escaped+'(?:$|\\W)','i').test(title)?term.length+10:0);
   },0);
+  return relevance || (id === "cybersecurity" && job.category === "Cybersecurity" ? 1 : 0);
 }

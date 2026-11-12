@@ -6,9 +6,6 @@ on:
     - cron: '17,47 10,22 * * *'
       timezone: 'Europe/Dublin'
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['web/**', 'scripts/**', 'job_monitor/**', 'run.py', 'config/**', '.github/workflows/web-scan.yml']
 permissions:
   contents: write
   actions: read
@@ -43,7 +40,7 @@ jobs:
           if-no-files-found: error
   update:
     # Enable after configuring Cloudflare, D1 and Access. Never affects original repo.
-    if: github.event_name != 'pull_request' && vars.WEB_ENABLED == 'true'
+    if: github.event_name != 'pull_request' && (vars.WEB_ENABLED == 'true' || (vars.WEB_ENABLED != 'false' && github.repository == 'DaithiORegan/AI-JobParser-ATS-Screening-Tool'))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -95,13 +92,17 @@ jobs:
           npm run build:pages
           python ../scripts/package_pages.py
           echo "pages_zip_ready=true" >> "$GITHUB_OUTPUT"
-          node configure.mjs
-          npx wrangler d1 migrations apply DB --remote
-          if [ "$HOSTING_TARGET" = "pages" ]; then
-            test -n "$PAGES_PROJECT_NAME"
-            npx wrangler pages deploy pages-dist --project-name "$PAGES_PROJECT_NAME" --branch "${PAGES_PRODUCTION_BRANCH:-main}"
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] && [ -n "$D1_DATABASE_ID" ]; then
+            node configure.mjs
+            npx wrangler d1 migrations apply DB --remote
+            if [ "$HOSTING_TARGET" = "pages" ]; then
+              test -n "$PAGES_PROJECT_NAME"
+              npx wrangler pages deploy pages-dist --project-name "$PAGES_PROJECT_NAME" --branch "${PAGES_PRODUCTION_BRANCH:-main}"
+            else
+              npx wrangler deploy
+            fi
           else
-            npx wrangler deploy
+            echo 'Snapshot will publish through the existing Pages Git integration after commit.'
           fi
       - uses: actions/upload-artifact@v4
         if: always() && steps.publish.outputs.pages_zip_ready == 'true'
@@ -114,8 +115,13 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/state.json web/public/jobs.json
-          if ! git diff --cached --quiet; then
-            git commit -m 'Update website job snapshot [skip ci]'
-            git push origin HEAD:main
-          fi
+          for attempt in 1 2 3; do
+            PYTHONPATH=. python scripts/export_web.py
+            git add data/state.json web/public/jobs.json
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m 'Update website job snapshot'
+            if git push origin HEAD:main; then exit 0; fi
+            python merge_state.py
+          done
+          echo 'Could not save the snapshot after three attempts.'
+          exit 1

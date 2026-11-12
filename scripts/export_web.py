@@ -47,7 +47,7 @@ def seen_in_scan(record, state):
     try:
         seen = datetime.fromisoformat(record['last_seen'])
         scanned = datetime.fromisoformat(state['last_scan_utc'])
-        return abs((scanned - seen).total_seconds()) < 600
+        return (scanned - seen).total_seconds() < 600
     except (ValueError, TypeError):
         return False
 
@@ -68,11 +68,12 @@ def export(state):
         elif category == 'Networking / Infrastructure':
             category = 'Cloud & Infrastructure'
         jobs.append(dict(j, id=jid, category=category, description=text,
-                         description_complete=bool(j.get('full_description')),
+                         description_complete=bool(j.get('full_description')) and j.get('provider') not in ('irishjobs','jobsie'),
                          seen_in_latest_scan=seen_in_scan(j, state),
+                         availability='seen_latest_scan' if seen_in_scan(j,state) else 'unconfirmed',
                          quick_summary=summarize(j, text)))
     jobs.sort(key=lambda j: -j.get('fit_score', 0))
-    return {'scanned_at':state.get('last_scan_utc'), 'exported_at':datetime.now(timezone.utc).isoformat(), 'jobs':jobs}
+    return {'scanned_at':state.get('last_scan_utc'), 'exported_at':datetime.now(timezone.utc).isoformat(), 'scan_health':state.get('scan_health',{}), 'jobs':jobs}
 
 if __name__ == '__main__':
     out = BASE / 'web/public/jobs.json'

@@ -1,0 +1,12 @@
+{
+ "Carlow":["Tullow"],"Cavan":[],"Clare":["Shannon","Ennis","Kilrush"],
+ "Cork":["mallow","midleton","cobh","fermoy","clonakilty","bantry","skibbereen","little island","ballincollig","carrigaline","bandon","kinsale","youghal","macroom","dunmanway","millstreet","mitchelstown","carrigtohill","ringaskiddy","blarney","kanturk"],
+ "Donegal":["letterkenny","bundoran","ballybofey"],"Dublin":["swords","tallaght","dun laoghaire","dún laoghaire","blanchardstown"],
+ "Galway":["oranmore","tuam","ballinasloe"],
+ "Kerry":["tralee","killarney","kenmare","listowel","dingle","killorglin","castleisland","cahersiveen","ballybunion","ballyheigue"],
+ "Kildare":["naas","maynooth","leixlip","newbridge","celbridge"],"Kilkenny":[],"Laois":["portlaoise"],"Leitrim":["carrick-on-shannon"],
+ "Limerick":["raheen","castletroy","newcastle west"],"Longford":[],"Louth":["dundalk","drogheda"],"Mayo":["castlebar","ballina","westport"],
+ "Meath":["navan","ashbourne","trim"],"Monaghan":[],"Offaly":["tullamore","birr"],"Roscommon":[],"Sligo":[],
+ "Tipperary":["clonmel","nenagh","thurles"],"Waterford":["dungarvan"],"Westmeath":["athlone","mullingar"],
+ "Wexford":["enniscorthy","new ross","gorey"],"Wicklow":["bray","arklow","greystones"]
+}

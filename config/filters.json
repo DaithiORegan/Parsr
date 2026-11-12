@@ -217,7 +217,17 @@
     "developer",
     "data scientist",
     "data engineer",
-    "bi analyst"
+    "bi analyst",
+    "it compliance",
+    "it/ot",
+    "ot security",
+    "soc",
+    "iam",
+    "information assurance",
+    "threat intelligence",
+    "detection engineer",
+    "security consultant",
+    "vulnerability management"
   ],
   "exclude_role_keywords": [],
   "include_remote_emea_without_ireland": false

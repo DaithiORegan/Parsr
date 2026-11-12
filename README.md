@@ -55,3 +55,9 @@ Add a CV in **My CV / AI review**, review the extracted text, and acknowledge Ge
 Public review attempts are limited to 5/hour and 20/day per network address, with a site-wide budget of 100/day. These limits include failed provider attempts. D1 stores only expiring counters with HMAC-hashed network identifiers; it stores no visitor CV or review output. Owner reviews retain their separate limits. Initial public rollout uses browser-tab storage; it does not provide cross-device accounts or saved visitor CVs.
 
 The expanded scanner includes national searches and direct employer feeds across sectors. Coverage depends on configured sources; this is not a complete national jobs database. Jooble's expanded 16-term search can use up to 64 requests/day for two scans, excluding manual runs. Scheduled scans generate summaries for every new exported role.
+
+## Scan coverage and retained listings
+
+Browsing defaults to all known listings. Jobs missed by a scan stay searchable with an **Availability unconfirmed** label, rather than disappearing. Choose **Seen in latest scan only** for the narrower latest snapshot. A source outage or partial query does not prove a vacancy closed. Coverage metadata identifies failed, partial and key-dependent sources; confirm availability on the employer's advert.
+
+Board pagination follows the advertised next link, and regional tech searches supplement national searches. The county/town registry includes Cork towns such as Carrigtohill and Ringaskiddy. The production private repo commits snapshots for automatic Pages Git deployment; public mirrors are opt-in for scheduled scans. Jooble needs its own Actions secret for fresh results.

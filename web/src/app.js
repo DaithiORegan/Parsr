@@ -44,7 +44,8 @@ let state = { jobs: [], cvs: [], status: [], analyses: [], ai_ready: false, owne
   matchingCV = "",
   matchingProgress = "",
   selectedJobID = "",
-  selectedRoleType = "";
+  selectedRoleType = "",
+  listingScope = "all";
 
 const categories = [
   "All roles",
@@ -154,7 +155,7 @@ function shell(content, nav) {
 function jobCard(j) {
   const r = review(j),
     saved = status(j) === "saved";
-  return `<article class="job ${j.id === selectedJobID ? "selected" : ""}"><div class="company-logo">${esc(j.company?.slice(0, 2).toUpperCase() || "IT")}</div><div><h3><button class="job-title" data-preview="${esc(j.id)}">${esc(j.title)}</button></h3><div class="company">${esc(j.company)} <span aria-hidden="true">·</span> ${esc(j.location)}</div><div class="job-meta"><span class="chip">${esc(j.category)}</span>${localJob(j) ? '<span class="badge">Cork & Kerry</span>' : ""}<span>${esc(j.experience || "Experience not stated")}</span>${status(j) === "applied" ? '<span class="badge">Applied</span>' : ""}</div><div class="job-actions"><a class="text-link" href="#/job/${encodeURIComponent(j.id)}">View role details ↗</a><button data-save="${esc(j.id)}" aria-label="${saved ? "Unsave" : "Save"} ${esc(j.title)}">${saved ? "♥ Saved" : "♡ Save"}</button></div></div>${r ? `<div class="score">${r.score}<small>AI CV fit / 100</small></div>` : ""}</article>`;
+  return `<article class="job ${j.id === selectedJobID ? "selected" : ""}"><div class="company-logo">${esc(j.company?.slice(0, 2).toUpperCase() || "IT")}</div><div><h3><button class="job-title" data-preview="${esc(j.id)}">${esc(j.title)}</button></h3><div class="company">${esc(j.company)} <span aria-hidden="true">·</span> ${esc(j.location)}</div><div class="job-meta">${j.seen_in_latest_scan === false?'<span class="stale-badge">Availability unconfirmed</span>':'<span class="badge">Seen in latest scan</span>'}<span class="chip">${esc(j.category)}</span>${localJob(j) ? '<span class="badge">Cork & Kerry</span>' : ""}<span>${esc(j.experience || "Experience not stated")}</span>${status(j) === "applied" ? '<span class="badge">Applied</span>' : ""}</div><div class="job-actions"><a class="text-link" href="#/job/${encodeURIComponent(j.id)}">View role details ↗</a><button data-save="${esc(j.id)}" aria-label="${saved ? "Unsave" : "Save"} ${esc(j.title)}">${saved ? "♥ Saved" : "♡ Save"}</button></div></div>${r ? `<div class="score">${r.score}<small>AI CV fit / 100</small></div>` : ""}</article>`;
 }
 
 function bindCards() {
@@ -200,6 +201,14 @@ async function setStatus(id, value) {
   }
 }
 
+function scanHealthNotice() {
+  const h=state.scan_health||{};
+  const failed=[...(h.failed_sources||[]),...(h.partial_sources||[])].map(s=>s.company||s.provider);
+  const locked=(h.locked_sources||[]).map(s=>s.company||s.provider);
+  const missing=state.jobs.filter(j=>j.seen_in_latest_scan===false).length;
+  if(!failed.length&&!locked.length&&!missing)return '';
+  return `<div class="banner"><strong>Scan coverage & availability</strong><br>${failed.length?`Unavailable or partial sources: ${esc([...new Set(failed)].join(', '))}. `:''}${locked.length?`Sources needing configuration: ${esc(locked.join(', '))}. `:''}${missing} previously indexed listings were not confirmed in the latest scan. They remain searchable and are labelled unconfirmed; a missed scan does not prove a job has closed. Open the original advert to check.</div>`;
+}
 function bestFitControls(jobs) {
   const reviewed = jobs.filter(j => review(j)).length;
   return `<section class="panel match-controls"><h3>Match these roles to your CV</h3><p>Gemini reviews roles in the selected location and job family against your CV. ${reviewed} of ${jobs.length} roles reviewed. Unchanged reviews are reused.</p><button id="find-matches" class="primary" ${!activeCV||!state.ai_ready||matchingCV||busy?'disabled':''}>${matchingCV?'Reviewing selected roles…':'Find my best matches'}</button><p class="note" role="status">${esc(matchingProgress || (!activeCV?'Add or select a CV to start.':!state.ai_ready?'Configure the Gemini API key to start matching.':(state.owner?'This sends CV and role text to Gemini. Up to 30 new reviews per hour.':'CV text goes to Gemini. Visitor limits: 5 attempts/hour and 20/day per network, subject to the site-wide budget.')))}</p></section>`;
@@ -209,7 +218,7 @@ async function findBestMatches() {
   if(matchingCV || !activeCV || !state.ai_ready) return;
   const cvID = activeCV;
   const pending = state.jobs.filter(
-    j => j.seen_in_latest_scan !== false && locationMatches(j,location) && roleRelevance(j,selectedRoleType)>0 && !review(j)
+    j => (listingScope === "all" || j.seen_in_latest_scan !== false) && locationMatches(j,location) && roleRelevance(j,selectedRoleType)>0 && !review(j)
   );
 
   matchingCV = cvID;
@@ -242,7 +251,7 @@ async function findBestMatches() {
 
 function listPage(nav) {
   let jobs = state.jobs
-    .filter((j) => nav === "saved" || j.seen_in_latest_scan !== false)
+    .filter((j) => listingScope === "all" || j.seen_in_latest_scan !== false)
 
     .filter((j) => nav !== "saved" || ["saved", "applied"].includes(status(j)));
 
@@ -285,7 +294,7 @@ function listPage(nav) {
   selectedJobID = selected?.id || "";
 
   shell(
-    `<div class="intro"><div><div class="eyebrow">YOUR JOB SEARCH, IN FOCUS</div><h1>${nav === "local" ? "Explore roles by location." : nav === "best-fit" ? "Your best matches." : nav === "saved" ? "Your saved opportunities." : "Find your next opportunity."}</h1><p>${nav === "local" ? "Choose any county, town or advertised location below." : nav === "best-fit" ? "Roles scoring 60+ against your selected CV, within your chosen location and job type." : nav === "saved" ? "Keep promising roles and track where you’ve applied." : "Explore roles across Ireland, across industries. Find your next step."}</p></div><a class="primary" href="#/cvs">Manage CVs ↗</a></div><div class="stats"><div class="stat"><div><small>${nav === "best-fit" ? "Local opportunities" : "Jobs in latest scan"}</small><strong>${base.length}</strong></div><div class="stat-icon">▦</div></div><div class="stat"><div><small>In selected location</small><strong>${state.jobs.filter(j => j.seen_in_latest_scan !== false && locationMatches(j,location)).length}</strong></div><div class="stat-icon">⌖</div></div><div class="stat"><div><small>CVs in your library</small><strong>${state.cvs.length}</strong></div><div class="stat-icon">▤</div></div></div>${nav === "best-fit" ? bestFitControls(base) : ""}${state.scanned_at && Date.now() - new Date(state.scanned_at) > 18 * 3600000 ? '<div class="banner">The latest snapshot is over 18 hours old. Check the scan workflow; listings may have changed.</div>' : ""}<div class="tabs" role="group" aria-label="Role categories">${categories.map((c) => `<button data-category="${esc(c)}" class="${category === c ? "active" : ""}">${c}</button>`).join("")}</div><div class="role-menu"><label for="role-type">What kind of role are you looking for?</label><select id="role-type"><option value="">Browse all job types</option>${ROLE_TYPES.map(t=>`<option value="${t.id}" ${selectedRoleType===t.id?'selected':''}>${t.label}</option>`).join('')}</select><p class="note">Includes similar job titles within your selected role family. Use search and location to narrow the results.</p></div><div class="filters"><input id="search" class="search" type="search" placeholder="Search job titles, companies or skills…" aria-label="Search jobs" value="${esc(query)}"><select id="location" aria-label="Location">${["All locations", ...COUNTIES, "Remote", ...new Set(state.jobs.map(j=>j.location).filter(Boolean))].map((l) => `<option ${location === l ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>${cvSelect()}</div><div class="result-heading"><span><strong>${jobs.length} opportunities</strong> <span class="muted">· Last scan ${date(state.scanned_at)}</span></span><select id="sort" aria-label="Sort jobs">${[
+    `<div class="intro"><div><div class="eyebrow">YOUR JOB SEARCH, IN FOCUS</div><h1>${nav === "local" ? "Explore roles by location." : nav === "best-fit" ? "Your best matches." : nav === "saved" ? "Your saved opportunities." : "Find your next opportunity."}</h1><p>${nav === "local" ? "Choose any county, town or advertised location below." : nav === "best-fit" ? "Roles scoring 60+ against your selected CV, within your chosen location and job type." : nav === "saved" ? "Keep promising roles and track where you’ve applied." : "Explore roles across Ireland, across industries. Find your next step."}</p></div><a class="primary" href="#/cvs">Manage CVs ↗</a></div><div class="stats"><div class="stat"><div><small>${nav === "best-fit" ? "Local opportunities" : "Known opportunities"}</small><strong>${base.length}</strong></div><div class="stat-icon">▦</div></div><div class="stat"><div><small>In selected location</small><strong>${state.jobs.filter(j => (listingScope === "all" || j.seen_in_latest_scan !== false) && locationMatches(j,location)).length}</strong></div><div class="stat-icon">⌖</div></div><div class="stat"><div><small>CVs in your library</small><strong>${state.cvs.length}</strong></div><div class="stat-icon">▤</div></div></div>${nav === "best-fit" ? bestFitControls(base) : ""}${scanHealthNotice()}${state.scanned_at && Date.now() - new Date(state.scanned_at) > 18 * 3600000 ? '<div class="banner">The latest snapshot is over 18 hours old. Check the scan workflow; listings may have changed.</div>' : ""}<div class="tabs" role="group" aria-label="Role categories">${categories.map((c) => `<button data-category="${esc(c)}" class="${category === c ? "active" : ""}">${c}</button>`).join("")}</div><div class="role-menu"><label for="role-type">What kind of role are you looking for?</label><select id="role-type"><option value="">Browse all job types</option>${ROLE_TYPES.map(t=>`<option value="${t.id}" ${selectedRoleType===t.id?'selected':''}>${t.label}</option>`).join('')}</select><p class="note">Includes similar job titles within your selected role family. Use search and location to narrow the results.</p></div><div class="filters"><input id="search" class="search" type="search" placeholder="Search job titles, companies or skills…" aria-label="Search jobs" value="${esc(query)}"><select id="listing-scope" aria-label="Listing freshness"><option value="all" ${listingScope==='all'?'selected':''}>All known listings</option><option value="latest" ${listingScope==='latest'?'selected':''}>Seen in latest scan only</option></select><select id="location" aria-label="Location">${["All locations", ...COUNTIES, "Remote", ...new Set(state.jobs.map(j=>j.location).filter(Boolean))].map((l) => `<option ${location === l ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>${cvSelect()}</div><div class="result-heading"><span><strong>${jobs.length} opportunities</strong> <span class="muted">· Last scan ${date(state.scanned_at)}</span></span><select id="sort" aria-label="Sort jobs">${[
       ["fit", "Best match"],
       ["newest", "Latest seen"],
       ["company", "Company A–Z"],
@@ -310,6 +319,7 @@ function listPage(nav) {
     document.querySelector('.job-preview > .text-link')?.remove();
   }
 
+  $("#listing-scope").onchange = e => {listingScope=e.target.value;page=1;render();};
   $("#role-type").onchange = e => {selectedRoleType=e.target.value;category="All roles";page=1;render();};
   $("#find-matches")?.addEventListener("click", findBestMatches);
 
@@ -440,7 +450,8 @@ function detail(id) {
       matchingCV = "";
       matchingProgress = "";
       selectedJobID = "",
-  selectedRoleType = "";
+  selectedRoleType = "",
+  listingScope = "all";
       render();
     }
   });

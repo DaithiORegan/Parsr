@@ -19,7 +19,7 @@ class ExpandedSources(unittest.TestCase):
         session.get.side_effect = [Mock(text=html([item], 2)), Mock(text=html([item, second])),
                                    Mock(text=html([second]))]
         with patch('job_monitor.boards.TERMS', ('it-support',)):
-            jobs = search_board(session, {'provider': 'irishjobs', 'slug': 'ireland', 'company': 'IrishJobs'})
+            jobs = search_board(session, {'provider': 'irishjobs', 'slug': 'ireland', 'company': 'IrishJobs', 'search_areas':['ireland']})
         self.assertEqual(len(jobs), 2)
         self.assertIn('?page=2', session.get.call_args_list[1].args[0])
         self.assertEqual(jobs[0]['location'], 'Dublin')
@@ -55,3 +55,20 @@ class ExpandedSources(unittest.TestCase):
     def test_workday_rejects_unexpected_host(self):
         with self.assertRaises(ValueError):
             workday(Mock(), {'url': 'https://example.com/External'})
+
+    def test_board_follows_advertised_offset_pagination(self):
+        item={'id':1,'title':'Information Security Analyst','companyName':'Example','location':'Carrigtohill','url':'/job/one'}
+        first={'searchResults':{'items':[item],'pagination':{'pageCount':2,'links':{'next':'https://www.irishjobs.ie/jobs/cyber-security/in-cork?of=25&action=paging_next'}}}}
+        page='<script>window.__PRELOADED_STATE__["app-unifiedResultlist"] = '+json.dumps(first)+';</script>'
+        session=Mock();session.get.side_effect=[Mock(text=page),Mock(text=html([dict(item,id=2,url='/job/two')]))]
+        with patch('job_monitor.boards.TERMS',('cyber-security',)):
+            rows=search_board(session,{'provider':'irishjobs','slug':'ireland','company':'IrishJobs','search_areas':['cork']})
+        self.assertEqual(len(rows),2)
+        self.assertIn('of=25',session.get.call_args_list[1].args[0])
+
+    def test_bad_query_does_not_discard_other_results(self):
+        session=Mock();session.get.side_effect=[Mock(text='<html>No search state</html>'),Mock(text=html([{'id':1,'title':'Security Analyst','companyName':'Example','location':'Cork','url':'/job/one'}]))]
+        source={'provider':'irishjobs','slug':'ireland','company':'IrishJobs','search_areas':['cork']}
+        with patch('job_monitor.boards.TERMS',('first','second')):
+            self.assertEqual(len(search_board(session,source)),1)
+        self.assertEqual(source['query_status']['failed_or_truncated'],1)

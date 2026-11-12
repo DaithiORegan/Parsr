@@ -135,7 +135,20 @@ def scan(dry_run: bool = False, list_only: bool = False, backfill: bool = False,
         print(f"[LOCKED] {src['company']}: {reason}")
     print(f'Checking {len(sources)} accessible feeds... {utc_now()}')
     jobs, errors, successes = collect(session_with_retries(), sources)
+    source_health = {
+        'attempted_at': utc_now(), 'successful_sources': len(successes),
+        'failed_sources': [{'provider':src['provider'],'company':src['company']} for src in sources
+                           if src.get('key', source_key(src['provider']+':'+src['slug'])) not in successes],
+        'locked_sources': [{'provider':src['provider'],'company':src['company']} for src, reason in locked],
+        'partial_sources': [{'provider':src['provider'],'company':src['company'],**src['query_status']} for src in sources
+                            if src.get('query_status',{}).get('failed_or_truncated')],
+    }
+    health_changed = False
+    if not (dry_run or backfill or full_report):
+        health_changed = state.get('scan_health') != source_health
+        state['scan_health'] = source_health
     if not successes:
+        if health_changed: write_state(state)
         print('Every source failed; preserving history and stopping.')
         return 1
     unique = {j['id']: j for j in jobs}
@@ -149,7 +162,7 @@ def scan(dry_run: bool = False, list_only: bool = False, backfill: bool = False,
         return report(matched, channel, utc_now(), dry_run, partial=bool(errors))
     # Lightweight index for later application tracking; no application is submitted.
     job_index = state.setdefault('job_index', {})
-    index_changed = False
+    index_changed = health_changed
     for j, category, assessment in matched:
         record = {'company':j['company'],'title':j['title'],'location':j['location'],
                   'url':j['url'],'category':category,'fit_score':assessment['score'],

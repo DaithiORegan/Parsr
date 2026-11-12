@@ -229,3 +229,4 @@ main{padding:24px 14px}
   display:block;
 }
 .role-menu{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:18px 20px;margin-bottom:18px}.role-menu label{margin:0 0 10px;font-size:17px}.role-menu select{width:100%;max-width:520px;font-size:15px}.role-menu p{margin-bottom:0}.public-note{display:flex;justify-content:space-between;gap:18px;font-size:12px;color:var(--muted);margin-bottom:22px}.public-note a{color:#efb0c6}.grid-two.public-detail{grid-template-columns:minmax(0,1fr);max-width:1000px}[hidden]{display:none!important}
+.stale-badge{display:inline-block;border:1px solid #8f7751;background:#41372d;color:#f3d8ad;border-radius:5px;padding:4px 7px;font-size:10px;line-height:1.5}

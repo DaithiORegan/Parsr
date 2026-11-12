@@ -26,3 +26,12 @@ class WebExport(unittest.TestCase):
         self.assertIn('• Support users',text)
         self.assertNotIn('<p>',text)
         self.assertNotIn('&lt;',text)
+
+    def test_failed_sources_keep_prior_listings_and_report_coverage(self):
+        state={'last_scan_utc':'2026-11-12T10:17:00+00:00', 'scan_health':{'failed_sources':[{'provider':'irishjobs','company':'IrishJobs'}]}, 'job_index':{
+            'old':{'url':'https://example.com/old','title':'Security Analyst','location':'Cork','provider':'irishjobs','full_description':'Snippet only','last_seen':'2026-11-11T10:17:00+00:00'}}}
+        data=export(state)
+        self.assertEqual(len(data['jobs']),1)
+        self.assertEqual(data['jobs'][0]['availability'],'unconfirmed')
+        self.assertFalse(data['jobs'][0]['description_complete'])
+        self.assertEqual(data['scan_health']['failed_sources'][0]['provider'],'irishjobs')

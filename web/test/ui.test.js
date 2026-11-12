@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { readFileSync } from "node:fs";
 import { localJob } from "../src/core.js";
-const places = readFileSync(new URL('../src/locations.js', import.meta.url),'utf8').replace(/export /g,'');
+const places = readFileSync(new URL('../src/locations.js', import.meta.url),'utf8').replace(/^import towns.*;$/m,'const towns = '+JSON.stringify(JSON.parse(readFileSync(new URL('../../config/irish_locations.json',import.meta.url),'utf8')))+';').replace(/export /g,'');
 const roles = readFileSync(new URL('../src/role-types.js', import.meta.url),'utf8').replace(/export /g,'');
 const formatter = readFileSync(new URL('../src/description.js', import.meta.url), 'utf8').replace('export function', 'function');
 const source = readFileSync(
@@ -249,4 +249,18 @@ test('visitor saves their CV only in the current tab',async()=>{
   assert.equal(stored.cvs.length,1);assert.equal(stored.cvs[0].name,'Visitor version');
   assert.match(w.document.querySelector('.cv-row').textContent,/Visitor version/);
   dom.window.close();
+});
+
+test('missing latest-scan Cork security roles remain discoverable with warnings',async()=>{
+  jobs.push({id:'historic',title:'Cyber Security Awareness Analyst',company:'Example',location:'Carrigtohill',category:'Cybersecurity',description:'Security awareness',url:'https://example.com/role',seen_in_latest_scan:false});
+  try {
+    const {w,dom}=await ui('#/jobs');
+    let location=w.document.querySelector('#location');location.value='Cork';location.dispatchEvent(new w.Event('change'));
+    let role=w.document.querySelector('#role-type');role.value='cybersecurity';role.dispatchEvent(new w.Event('change'));
+    assert.equal(w.document.querySelectorAll('.job').length,1);
+    assert.match(w.document.querySelector('.job').textContent,/Availability unconfirmed/);
+    const scope=w.document.querySelector('#listing-scope');scope.value='latest';scope.dispatchEvent(new w.Event('change'));
+    assert.equal(w.document.querySelectorAll('.job').length,0);
+    dom.window.close();
+  }finally{jobs.pop();}
 });

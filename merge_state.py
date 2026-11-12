@@ -14,6 +14,13 @@ seen=dict(remote.get('seen',{}))
 seen.update(local.get('seen',{}))
 result=dict(remote)
 result.update(local)
+# Never replace the entire remote index with an older scanner snapshot.
+index=dict(remote.get('job_index',{}))
+for jid, record in local.get('job_index',{}).items():
+    previous=index.get(jid)
+    if previous is None or record.get('last_seen','') >= previous.get('last_seen',''):
+        index[jid]=record
+result['job_index']=index
 result['seen']=seen
 result['baselined_sources']=sorted(set(local.get('baselined_sources',[]))|set(remote.get('baselined_sources',[])))
 result['backfill_sent']=sorted(set(local.get('backfill_sent',[]))|set(remote.get('backfill_sent',[])))

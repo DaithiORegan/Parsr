@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import re
+import json
+from pathlib import Path
+
+IRISH_LOCATIONS = json.loads((Path(__file__).resolve().parents[1]/"config/irish_locations.json").read_text())
 
 
 def _contains_term(text: str, term: str) -> bool:
@@ -11,6 +15,11 @@ def _contains_term(text: str, term: str) -> bool:
 
 def classify(title: str) -> str:
     t = title.casefold()
+    if not any(_contains_term(title,k) for k in ('sales','account executive','business development','marketing')):
+        if any(k in t for k in ('cyber','soc analyst','security analyst','information security','security engineer','it compliance','grc','penetration','incident response','iam','vulnerability','threat intelligence')):
+            return 'Cybersecurity'
+    if any(k in t for k in ('technical support','it support','customer support engineer')):
+        return 'IT Support / Technical'
     if _contains_term(title, 'administrator') and not any(k in t for k in ('system','network','database','it administrator','cloud','security')):
         return 'Administration'
     # Additional sectors; avoid classifying IT systems administrators as office roles.
@@ -51,7 +60,7 @@ def matching_category(job: dict[str, str], filters: dict) -> str | None:
         return None
     if not any(_contains_term(title, x) for x in filters.get("role_keywords", [])):
         return None
-    if not any(_contains_term(location, x) for x in filters.get("country_locations", [])):
+    if not any(_contains_term(location, x) for x in list(filters.get("country_locations", [])) + [town for towns in IRISH_LOCATIONS.values() for town in towns]):
         if not (filters.get("include_remote_emea_without_ireland", False)
                 and any(_contains_term(location, x) for x in ("EMEA", "Europe", "European Union"))
                 and "remote" in location.casefold()):

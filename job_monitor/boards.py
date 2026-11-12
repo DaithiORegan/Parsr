@@ -51,9 +51,11 @@ def search_board(session, source):
     base = 'https://' + host
     jobs = {}
     failed_queries = 0
+    succeeded_queries = 0
+    source["query_status"] = {}
     for term in TERMS:
         # National queries support visitor-selected locations across Ireland.
-        for area in ('ireland',):
+        for area in (source.get('search_areas') or (('ireland','cork','dublin','galway','limerick','kerry') if term in ('cyber-security','soc-analyst','it-support','network-engineer') else ('ireland',))):
             try:
                 url = f'{base}/jobs/{term}/in-{area}'
                 visited = set()
@@ -79,12 +81,22 @@ def search_board(session, source):
                     pagination = results.get('pagination') or {}
                     if page + 1 >= int(pagination.get('pageCount', 1)):
                         break
-                    url = f'{base}/jobs/{term}/in-{area}?page={page + 2}'
+                    next_link = pagination.get('links', {}).get('next')
+                    if isinstance(next_link, str) and next_link:
+                        next_url = urljoin(base, next_link)
+                        parsed = urlparse(next_url)
+                        if parsed.scheme != 'https' or parsed.hostname != host:
+                            raise ValueError('Unexpected pagination host')
+                        url = next_url
+                    else:
+                        url = f'{base}/jobs/{term}/in-{area}?page={page + 2}'
                 else:
                     raise ValueError('Job board search exceeds pagination budget')
+                succeeded_queries += 1
             except ValueError:
                 failed_queries += 1
                 print(f"[PARTIAL] {source['provider']}: skipped search with unavailable result data")
+    source['query_status'] = {'succeeded':succeeded_queries,'failed_or_truncated':failed_queries}
     if failed_queries and not jobs:
         raise ValueError('No usable job-board result data')
     return list(jobs.values())
