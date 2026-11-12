@@ -1,6 +1,12 @@
 name: Diagnose job source access
 on:
   workflow_dispatch:
+    inputs:
+      source:
+        description: Sources to check
+        type: choice
+        options: [all, jooble]
+        default: all
 permissions:
   contents: read
 jobs:
@@ -16,4 +22,5 @@ jobs:
       - name: Check sources without printing credentials or response bodies
         env:
           JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
+          DIAGNOSTIC_SOURCE: ${{ inputs.source }}
         run: PYTHONPATH=. python scripts/diagnose_sources.py

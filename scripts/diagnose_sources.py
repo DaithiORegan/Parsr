@@ -1,6 +1,7 @@
 """Bounded source checks. Print fixed categories only, never URLs, keys or bodies."""
 import json
 import os
+import re
 from urllib.parse import quote
 
 import requests
@@ -28,8 +29,13 @@ def response_category(response):
     text = response.text[:16000].lower()
     if response.headers.get('cf-mitigated') == 'challenge' or 'just a moment' in text or 'captcha' in text:
         return 'provider_browser_challenge'
-    if 'invalid api key' in text or 'invalid key' in text or 'key is invalid' in text:
+    if any(phrase in text for phrase in ('invalid api key', 'invalid key', 'key is invalid',
+                                         'api key not found', 'api key is not found')):
         return 'provider_rejected_key'
+    if any(phrase in text for phrase in ('key is disabled', 'key is inactive', 'key is blocked', 'key has expired')):
+        return 'provider_key_not_active'
+    if any(phrase in text for phrase in ('quota exceeded', 'limit exceeded', 'daily limit', 'requests limit', 'too many requests')):
+        return 'provider_rate_limit'
     if 'ip' in text and ('not allowed' in text or 'blocked' in text or 'whitelist' in text):
         return 'provider_ip_restriction'
     if response.status_code == 429:
@@ -41,6 +47,20 @@ def response_category(response):
     return 'provider_http_error'
 
 
+def response_evidence(response):
+    """Expose only predefined labels, even if a provider echoes a credential."""
+    text = response.text[:16000].lower()
+    patterns = {'mentions_api_key': r'api[ _-]?key', 'mentions_quota': r'\bquota\b',
+                'mentions_limit': r'\blimit\b', 'mentions_expired': r'\bexpired\b',
+                'mentions_disabled': r'\b(?:disabled|inactive)\b',
+                'mentions_invalid': r'\binvalid\b', 'mentions_forbidden': r'\bforbidden\b',
+                'mentions_country': r'\bcountry\b', 'mentions_ip_address': r'\bip(?: address)?\b',
+                'mentions_domain': r'\bdomain\b', 'mentions_access_denied': r'access (?:is )?denied'}
+    mime = response.headers.get('Content-Type', '').lower()
+    return {'response_format': 'json' if 'json' in mime else 'html' if 'html' in mime else 'other',
+            'signals': [label for label, pattern in patterns.items() if re.search(pattern, text)]}
+
+
 def main():
     key = os.environ.get('JOOBLE_API_KEY', '').strip()
     checks = [('IrishJobs', 'https://www.irishjobs.ie/jobs/it-support/in-cork', None),
@@ -50,6 +70,8 @@ def main():
                           {'keywords': 'it support', 'location': 'Cork', 'page': '1', 'ResultOnPage': '1'}))
     else:
         print(json.dumps({'source': 'Jooble Ireland', 'category': 'key_not_configured'}))
+    if os.environ.get('DIAGNOSTIC_SOURCE') == 'jooble':
+        checks = [check for check in checks if check[0] == 'Jooble Ireland']
     for name, url, payload in checks:
         try:
             response = requests.request('POST' if payload else 'GET', url, json=payload,
@@ -57,6 +79,8 @@ def main():
                                         headers={'User-Agent': 'Parsr/1.0 (job source availability check)'})
             result = {'source': name, 'http_status': response.status_code,
                       'category': response_category(response)}
+            if response.status_code != 200:
+                result.update(response_evidence(response))
             if name != 'Jooble Ireland' and response.status_code == 200:
                 from job_monitor.boards import parse_results
                 try:
