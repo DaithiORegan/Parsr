@@ -1,0 +1,46 @@
+name: Refresh live website from Parsr
+on:
+  schedule:
+    # Follow Parsr's 10:17/22:17 Dublin scans, including their backup attempts.
+    - cron: '17,47 11,23 * * *'
+      timezone: 'Europe/Dublin'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: job-monitor-state
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: github.repository == 'DaithiORegan/AI-JobParser-ATS-Screening-Tool' && vars.SYNC_PUBLIC_FEED != 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check primary or backup slot
+        id: schedule
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCHEDULE_WORKFLOW: sync-public-feed.yml
+        run: python schedule_gate.py
+      - name: Import public vacancies and publish through Pages Git integration
+        if: steps.schedule.outputs.run_scan == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3; do
+            python scripts/import_public_feed.py
+            PYTHONPATH=. python scripts/export_web.py
+            git add data/state.json web/public/jobs.json
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m 'Refresh website with Parsr scan results'
+            if git push origin HEAD:main; then exit 0; fi
+            python merge_state.py
+          done
+          exit 1
