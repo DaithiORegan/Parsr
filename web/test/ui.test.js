@@ -83,6 +83,8 @@ test('Unseen excludes every existing listing, even when seen in a fresh scan', a
   assert.equal(w.document.querySelectorAll('.job').length,0);
   assert.match(w.document.querySelector('.empty').textContent,/caught up/);
   assert.match(w.document.querySelector('a[href="#/unseen"].active').textContent,/Unseen \(0\)/);
+  assert.equal(w.document.querySelectorAll('.stat strong')[1].textContent,'0');
+  assert.ok(w.document.querySelector('.job-browser.is-empty'));
   dom.window.close();
 });
 

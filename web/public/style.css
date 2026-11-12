@@ -50,8 +50,9 @@ p{line-height:1.7}
 .tabs{display:flex;gap:7px;overflow-x:auto;padding:0 0 16px}
 .tabs button{white-space:nowrap;font-size:12px;color:#d2ced6;padding:8px 13px;border-color:#57525d}
 .tabs button.active{background:var(--maroon);border-color:#b25b78;color:white}
-.filters{display:flex;gap:10px;margin-bottom:17px}
-.search{flex:1;min-width:140px}
+.filters{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:17px}
+.filters>select{flex:1 1 160px;min-width:0;max-width:100%}
+.search{flex:2 1 260px;min-width:140px}
 input,select,textarea{background:#303137;border:1px solid #56545f;color:#f1eff4;border-radius:7px;padding:12px}
 input::placeholder,textarea::placeholder{color:#b9b6c0}
 select{font-size:12px}
@@ -230,3 +231,5 @@ main{padding:24px 14px}
 }
 .role-menu{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:18px 20px;margin-bottom:18px}.role-menu label{margin:0 0 10px;font-size:17px}.role-menu select{width:100%;max-width:520px;font-size:15px}.role-menu p{margin-bottom:0}.public-note{display:flex;justify-content:space-between;gap:18px;font-size:12px;color:var(--muted);margin-bottom:22px}.public-note a{color:#efb0c6}.grid-two.public-detail{grid-template-columns:minmax(0,1fr);max-width:1000px}[hidden]{display:none!important}
 .stale-badge{display:inline-block;border:1px solid #8f7751;background:#41372d;color:#f3d8ad;border-radius:5px;padding:4px 7px;font-size:10px;line-height:1.5}
+
+.job-browser.is-empty{display:block}
