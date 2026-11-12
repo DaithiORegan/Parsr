@@ -1,0 +1,121 @@
+name: Website scan and Cloudflare deploy
+on:
+  pull_request:
+    paths: ["web/**", "scripts/package_pages.py", ".github/workflows/web-scan.yml"]
+  schedule:
+    - cron: '17,47 10,22 * * *'
+      timezone: 'Europe/Dublin'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['web/**', 'scripts/**', 'job_monitor/**', 'run.py', 'config/**', '.github/workflows/web-scan.yml']
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('review-{0}', github.event.pull_request.number) || 'job-monitor-state' }}
+  cancel-in-progress: false
+jobs:
+  review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Test and build Pages for review
+        working-directory: web
+        run: |
+          npm ci
+          npm test
+          npm run build:pages
+      - name: Package and verify Gemini backend
+        run: python scripts/package_pages.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-pages-review
+          path: downloads/AI-JobParser-ATS-Screening-Tool-Cloudflare-Upload.zip
+          if-no-files-found: error
+  update:
+    # Enable after configuring Cloudflare, D1 and Access. Never affects original repo.
+    if: github.event_name != 'pull_request' && vars.WEB_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Check primary / backup slot
+        id: schedule
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCHEDULE_WORKFLOW: web-scan.yml
+        run: python schedule_gate.py
+      - uses: actions/setup-python@v5
+        if: steps.schedule.outputs.run_scan == 'true'
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        if: steps.schedule.outputs.run_scan == 'true'
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Scan, verify, publish
+        id: publish
+        if: steps.schedule.outputs.run_scan == 'true'
+        env:
+          JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
+          # Optional: use separate Discord webhooks for this repo to avoid duplicate original-channel posts.
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_LOCAL: ${{ secrets.DISCORD_WEBHOOK_LOCAL }}
+          DISCORD_WEBHOOK_ATS: ${{ secrets.DISCORD_WEBHOOK_ATS }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          HOSTING_TARGET: ${{ vars.HOSTING_TARGET }}
+          PAGES_PROJECT_NAME: ${{ vars.PAGES_PROJECT_NAME }}
+          PAGES_PRODUCTION_BRANCH: ${{ vars.PAGES_PRODUCTION_BRANCH }}
+          D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
+          ACCESS_TEAM_DOMAIN: ${{ vars.ACCESS_TEAM_DOMAIN }}
+          ACCESS_AUD: ${{ vars.ACCESS_AUD }}
+          OWNER_EMAIL: ${{ vars.OWNER_EMAIL }}
+        run: |
+          python -m pip install -r requirements-bot.txt
+          python -m unittest discover -s tests -q
+          python run.py
+          PYTHONPATH=. python scripts/export_web.py
+          cd web
+          npm ci
+          npm test
+          npm run build:pages
+          python ../scripts/package_pages.py
+          echo "pages_zip_ready=true" >> "$GITHUB_OUTPUT"
+          node configure.mjs
+          npx wrangler d1 migrations apply DB --remote
+          if [ "$HOSTING_TARGET" = "pages" ]; then
+            test -n "$PAGES_PROJECT_NAME"
+            npx wrangler pages deploy pages-dist --project-name "$PAGES_PROJECT_NAME" --branch "${PAGES_PRODUCTION_BRANCH:-main}"
+          else
+            npx wrangler deploy
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.publish.outputs.pages_zip_ready == 'true'
+        with:
+          name: cloudflare-pages-upload
+          path: downloads/AI-JobParser-ATS-Screening-Tool-Cloudflare-Upload.zip
+          if-no-files-found: error
+      - name: Persist scan history
+        if: always() && steps.schedule.outputs.run_scan == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/state.json web/public/jobs.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update website job snapshot [skip ci]'
+            git push origin HEAD:main
+          fi

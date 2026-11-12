@@ -1,0 +1,106 @@
+name: Manual Discord Monitor (optional)
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Backfill target channel'
+        required: true
+        default: 'general'
+        type: choice
+        options:
+          - general
+          - local
+          - ats
+          - all
+      mode:
+        description: 'Choose normal scan or send a small batch of existing jobs'
+        required: true
+        default: 'scan'
+        type: choice
+        options:
+          - scan
+          - backfill-preview
+          - backfill-send
+          - report
+          - report-preview
+          - saved-report
+          - saved-report-preview
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: job-monitor-state
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out latest branch
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: true
+      - name: Check scheduled slot
+        id: schedule
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 schedule_gate.py
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements-bot.txt
+      - name: Run regression tests
+        run: python -m unittest discover -s tests -q
+      - name: Fetch fresh state
+        run: git pull --ff-only origin main
+      - name: Collect jobs / send filtered alerts
+        if: steps.schedule.outputs.run_scan == 'true'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
+          DISCORD_WEBHOOK_LOCAL: ${{ secrets.DISCORD_WEBHOOK_LOCAL }}
+          DISCORD_WEBHOOK_ATS: ${{ secrets.DISCORD_WEBHOOK_ATS }}
+          CHANNEL: ${{ github.event.inputs.channel }}
+          MODE: ${{ github.event.inputs.mode }}
+        shell: bash
+        run: |
+          case "$MODE" in
+            report) python run.py --report --channel "${CHANNEL:-all}" ;;
+            report-preview) python run.py --report --dry-run --channel "${CHANNEL:-all}" ;;
+            saved-report) python run.py --saved-report --channel "${CHANNEL:-all}" ;;
+            saved-report-preview) python run.py --saved-report --dry-run --channel "${CHANNEL:-all}" ;;
+            backfill-preview) python run.py --backfill --dry-run --channel "${CHANNEL:-general}" ;;
+            backfill-send)    python run.py --backfill --channel "${CHANNEL:-general}" ;;
+            *)                python run.py --with-report ;;
+          esac
+      - name: Save updated state, merge concurrent branch changes
+        if: always() && steps.schedule.outputs.run_scan == 'true' && github.event.inputs.mode != 'backfill-preview'
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3; do
+            if git diff --quiet -- data/state.json; then
+              echo 'No state changes to save.'
+              exit 0
+            fi
+            git add data/state.json
+            git commit -m 'Update monitored job state [skip ci]'
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo 'Remote branch changed; merging job history and retrying.'
+            python merge_state.py
+          done
+          echo 'Could not push state after three attempts.'
+          exit 1
+
+

@@ -1,0 +1,1 @@
+"""Irish IT Job Monitor."""

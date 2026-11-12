@@ -1,0 +1,24 @@
+{
+  "target_locations": [
+    "ireland"
+  ],
+  "preferred_titles": [
+    "IT Support",
+    "Helpdesk",
+    "Security Analyst",
+    "Network Engineer",
+    "Data Analyst"
+  ],
+  "skills": [
+    "Windows",
+    "Linux",
+    "Networking",
+    "Technical Support",
+    "Documentation"
+  ],
+  "background": "Generic example configuration. Configure a private local profile for personal use; never commit a real CV.",
+  "max_stated_experience_years_for_high_fit": 2,
+  "min_alert_score": 48,
+  "backfill_min_score": 58,
+  "backfill_max_per_run": 15
+}

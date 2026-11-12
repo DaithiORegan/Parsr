@@ -1,0 +1,5 @@
+# LOCALHOST ONLY. Never enable in production.
+LOCAL_DEV=true
+# Optional for live AI testing. Never commit a real key.
+# GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.5-flash-lite
