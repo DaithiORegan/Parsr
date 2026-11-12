@@ -14,6 +14,29 @@ class UpgradeTests(TestCase):
                 'url':'https://example.org/job/'+str(number),
                 'provider':provider, 'salary':'', 'posted':''}
 
+    def test_unseen_excludes_legacy_jobs_and_preserves_first_index_time(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'state.json'
+            path.write_text(json.dumps({'initialized':False,'seen':{},'baselined_sources':[],
+                'job_index':{'greenhouse:example:1':{'title':'Legacy role'},
+                             'greenhouse:example:2':{'first_indexed_at':'2026-11-12T22:30:00+00:00'}}}))
+            rows=[self._job('Legacy',1),self._job('Tracked',2),self._job('New Employer',3)]
+            source=[{'provider':'greenhouse','slug':'example','company':'Example'}]
+            with patch.object(run,'STATE_PATH',path),patch.object(run,'load_sources',return_value=source), \
+                 patch.object(run,'collect',return_value=(rows,[],{'greenhouse:example'})), \
+                 patch.object(run,'session_with_retries',return_value=None),patch.dict(run.os.environ,{},clear=True):
+                with patch.object(run,'utc_now',return_value='2026-11-12T23:00:00+00:00'):
+                    self.assertEqual(run.scan(),0)
+                indexed=json.loads(path.read_text())['job_index']
+                self.assertNotIn('first_indexed_at',indexed['greenhouse:example:1'])
+                self.assertEqual(indexed['greenhouse:example:2']['first_indexed_at'],'2026-11-12T22:30:00+00:00')
+                self.assertEqual(indexed['greenhouse:example:3']['first_indexed_at'],'2026-11-12T23:00:00+00:00')
+                with patch.object(run,'utc_now',return_value='2026-11-13T11:00:00+00:00'):
+                    self.assertEqual(run.scan(),0)
+                indexed=json.loads(path.read_text())['job_index']
+                self.assertNotIn('first_indexed_at',indexed['greenhouse:example:1'])
+                self.assertEqual(indexed['greenhouse:example:3']['first_indexed_at'],'2026-11-12T23:00:00+00:00')
+
     def test_migrates_legacy_state_and_silently_baselines_new_feeds(self):
         with tempfile.TemporaryDirectory() as temp:
             p = Path(temp)/'state.json'

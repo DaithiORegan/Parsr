@@ -7,7 +7,7 @@ from urllib.request import Request, urlopen
 
 BASE=Path(__file__).resolve().parents[1]
 URL='https://raw.githubusercontent.com/DaithiORegan/Parsr/main/web/public/jobs.json'
-FIELDS=('title','company','location','url','provider','salary','posted','description','full_description','last_seen','category','experience')
+FIELDS=('title','company','location','url','provider','salary','posted','description','full_description','last_seen','first_indexed_at','category','experience')
 
 def merge_feed(state, feed):
     if not isinstance(feed.get('jobs'),list) or not feed.get('scanned_at'):

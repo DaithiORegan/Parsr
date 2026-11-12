@@ -12,3 +12,9 @@ class PublicFeed(unittest.TestCase):
         state={'last_scan_utc':'2026-11-12T12:00:00Z','job_index':{}}
         result,changed=merge_feed(state,{'scanned_at':'2026-11-12T10:00:00Z','jobs':[]})
         self.assertFalse(changed);self.assertEqual(result,state)
+
+    def test_first_index_time_survives_public_to_live_sync(self):
+        timestamp='2026-11-12T23:00:00Z'
+        feed={'scanned_at':timestamp,'jobs':[{'id':'new','url':'https://example.com/job','first_indexed_at':timestamp}]}
+        result,_=merge_feed({'job_index':{}},feed)
+        self.assertEqual(result['job_index']['new']['first_indexed_at'],timestamp)

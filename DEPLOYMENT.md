@@ -150,3 +150,16 @@ Jooble still requires JOOBLE_API_KEY as an Actions secret to collect new Jooble 
 The public DaithiORegan/Parsr repository is now the canonical scanner. Add JOOBLE_API_KEY to that repository's Actions secrets. Scheduled scans run at 10:17/22:17 Europe/Dublin with backup attempts; manual dispatch runs even when the scheduled enable flag is off. A new public scanner preserves its existing public feed as an initial index so the first scan cannot erase retained listings.
 
 The existing Cloudflare project still builds from the private AI-JobParser-ATS-Screening-Tool repository. Its Refresh live website from Parsr workflow imports only the public vacancy feed at 11:17/23:17 (with backup attempts), then commits a snapshot to trigger the existing Pages Git deployment. It can also be dispatched manually after a manual Parsr scan. No Jooble secret, CV, review, owner password or delivery history is transferred. Direct scans in the private repository are manual-only. Keep WEB_ENABLED unset/true in Parsr for scheduled scans and SYNC_PUBLIC_FEED unset/true in the private deployment repo for scheduled imports.
+## Unseen roles
+
+The Unseen page starts with the existing job index as its baseline. Scanner
+updates give `first_indexed_at` only to genuinely new job IDs, and preserve that
+timestamp on later scans. Legacy entries remain excluded even when their advert
+changes or a failed source returns again. The public-to-live feed sync carries
+this timestamp through to the website.
+
+Opening a role's preview, detail page or original advert records its ID in this
+browser's local storage. Merely displaying the default preview does not mark it
+seen. Other tabs update automatically. This history is per browser, contains job
+IDs only, and resets if the user clears site data; it does not store CV text or
+sync between devices.

@@ -36,7 +36,7 @@ let state = { jobs: [], cvs: [], status: [], analyses: [], ai_ready: false, owne
   category = "All roles",
   query = "",
   location = "All locations",
-  sort = "fit",
+  sort = window.location.hash.startsWith("#/unseen") ? "newest" : "fit",
   page = 1,
   error = "",
   activeCV = localStorage.getItem("activeCV") || "",
@@ -58,6 +58,34 @@ const categories = [
 ];
 
 const app = $("#app");
+
+const seenStorageKey = 'parsr-seen-jobs-v1';
+const seenJobs = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem(seenStorageKey) || '[]');
+  if (Array.isArray(saved)) saved.filter(id => typeof id === 'string').forEach(id => seenJobs.add(id));
+} catch {}
+const isUnseen = j => Boolean(j.first_indexed_at && Number.isFinite(Date.parse(j.first_indexed_at)) && !seenJobs.has(j.id));
+function markSeen(id) {
+  if (!state.jobs.some(j => j.id === id && j.first_indexed_at)) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(seenStorageKey) || '[]');
+    if (Array.isArray(saved)) saved.filter(value => typeof value === 'string').forEach(value => seenJobs.add(value));
+  } catch {}
+  seenJobs.add(id);
+  try {localStorage.setItem(seenStorageKey, JSON.stringify([...seenJobs]));} catch {}
+}
+
+window.addEventListener('storage', event => {
+  if (event.key !== seenStorageKey) return;
+  try {
+    const saved = JSON.parse(event.newValue || '[]');
+    if (!Array.isArray(saved)) return;
+    seenJobs.clear();
+    saved.filter(id => typeof id === 'string').forEach(id => seenJobs.add(id));
+    if (locationHash()[0] === 'unseen') render();
+  } catch {}
+});
 
 function toast(message) {
   $("#toast").textContent = message;
@@ -135,6 +163,7 @@ function shell(content, nav) {
   </span>
 </a><div class="navlabel">YOUR WORKSPACE</div><nav class="nav" aria-label="Main navigation">${[
     ["jobs", "▦", "All jobs"],
+    ["unseen", "◉", `Unseen (${state.jobs.filter(isUnseen).length})`],
     ["local", "⌖", "By location"],
     ...ownerLinks,
   ]
@@ -144,7 +173,7 @@ function shell(content, nav) {
     )
     .join(
       "",
-    )}</nav><div class="side-note"><span class="dot"></span><strong>Always looking ahead</strong><br>Fresh scans twice a day.<br>Your next opportunity could be one scan away.</div><div class="profile"><div class="avatar">Y</div><div>Parsr<small>Irish tech opportunities</small></div></div></aside><div><header class="topbar"><span>Workspace <span class="muted">/ ${esc(nav === "cvs" ? "CV library" : nav === "best-fit" ? "Best Fit" : "Opportunities")}</span></span><span class="workspace-tag">◉ Public job browser</span></header><main>${!state.owner ? '<div class="public-note">Explore Irish tech roles · <a href="/owner">Owner sign in</a></div>' : ""}${error ? `<div class="banner">${esc(error)}</div>` : ""}${content}</main></div></div>`;
+    )}</nav><div class="side-note"><span class="dot"></span><strong>Always looking ahead</strong><br>Fresh scans twice a day.<br>Your next opportunity could be one scan away.</div><div class="profile"><div class="avatar">Y</div><div>Parsr<small>Irish tech opportunities</small></div></div></aside><div><header class="topbar"><span>Workspace <span class="muted">/ ${esc(nav === "cvs" ? "CV library" : nav === "best-fit" ? "Best Fit" : nav === "unseen" ? "Unseen roles" : "Opportunities")}</span></span><span class="workspace-tag">◉ Public job browser</span></header><main>${!state.owner ? '<div class="public-note">Explore Irish tech roles · <a href="/owner">Owner sign in</a></div>' : ""}${error ? `<div class="banner">${esc(error)}</div>` : ""}${content}</main></div></div>`;
   $("#active-cv")?.addEventListener("change", (e) => {
     activeCV = e.target.value;
     localStorage.setItem("activeCV", activeCV);
@@ -155,12 +184,18 @@ function shell(content, nav) {
 function jobCard(j) {
   const r = review(j),
     saved = status(j) === "saved";
-  return `<article class="job ${j.id === selectedJobID ? "selected" : ""}"><div class="company-logo">${esc(j.company?.slice(0, 2).toUpperCase() || "IT")}</div><div><h3><button class="job-title" data-preview="${esc(j.id)}">${esc(j.title)}</button></h3><div class="company">${esc(j.company)} <span aria-hidden="true">·</span> ${esc(j.location)}</div><div class="job-meta">${j.seen_in_latest_scan === false?'<span class="stale-badge">Availability unconfirmed</span>':'<span class="badge">Seen in latest scan</span>'}<span class="chip">${esc(j.category)}</span>${localJob(j) ? '<span class="badge">Cork & Kerry</span>' : ""}<span>${esc(j.experience || "Experience not stated")}</span>${status(j) === "applied" ? '<span class="badge">Applied</span>' : ""}</div><div class="job-actions"><a class="text-link" href="#/job/${encodeURIComponent(j.id)}">View role details ↗</a><button data-save="${esc(j.id)}" aria-label="${saved ? "Unsave" : "Save"} ${esc(j.title)}">${saved ? "♥ Saved" : "♡ Save"}</button></div></div>${r ? `<div class="score">${r.score}<small>AI CV fit / 100</small></div>` : ""}</article>`;
+  return `<article class="job ${j.id === selectedJobID ? "selected" : ""}"><div class="company-logo">${esc(j.company?.slice(0, 2).toUpperCase() || "IT")}</div><div><h3><button class="job-title" data-preview="${esc(j.id)}">${esc(j.title)}</button></h3><div class="company">${esc(j.company)} <span aria-hidden="true">·</span> ${esc(j.location)}</div><div class="job-meta">${isUnseen(j)?'<span class="badge">Unseen</span>':''}${j.seen_in_latest_scan === false?'<span class="stale-badge">Availability unconfirmed</span>':'<span class="badge">Seen in latest scan</span>'}<span class="chip">${esc(j.category)}</span>${localJob(j) ? '<span class="badge">Cork & Kerry</span>' : ""}<span>${esc(j.experience || "Experience not stated")}</span>${status(j) === "applied" ? '<span class="badge">Applied</span>' : ""}</div><div class="job-actions"><a class="text-link" href="#/job/${encodeURIComponent(j.id)}">View role details ↗</a><button data-save="${esc(j.id)}" aria-label="${saved ? "Unsave" : "Save"} ${esc(j.title)}">${saved ? "♥ Saved" : "♡ Save"}</button></div></div>${r ? `<div class="score">${r.score}<small>AI CV fit / 100</small></div>` : ""}</article>`;
 }
 
 function bindCards() {
+  $$("[data-role-open]").forEach(a => a.addEventListener("click", () => markSeen(a.dataset.roleOpen)));
   $$("[data-preview]").forEach(b => b.onclick = () => {
     selectedJobID = b.dataset.preview;
+    markSeen(selectedJobID);
+    if (locationHash()[0] === 'unseen') {
+      window.location.hash = '#/job/' + encodeURIComponent(selectedJobID);
+      return;
+    }
     render();
     if (window.innerWidth < 900)
       document.querySelector(".job-preview")?.scrollIntoView({
@@ -251,6 +286,7 @@ async function findBestMatches() {
 
 function listPage(nav) {
   let jobs = state.jobs
+    .filter(j => nav !== 'unseen' || isUnseen(j))
     .filter((j) => listingScope === "all" || j.seen_in_latest_scan !== false)
 
     .filter((j) => nav !== "saved" || ["saved", "applied"].includes(status(j)));
@@ -278,8 +314,8 @@ function listPage(nav) {
     sort === "company"
       ? a.company.localeCompare(b.company)
       : sort === "newest"
-        ? String(b.last_seen || b.posted || "").localeCompare(
-            String(a.last_seen || a.posted || ""),
+        ? String((nav === "unseen" ? b.first_indexed_at : b.last_seen) || b.posted || "").localeCompare(
+            String((nav === "unseen" ? a.first_indexed_at : a.last_seen) || a.posted || ""),
           )
         : (review(b)?.score ?? b.fit_score ?? 0) -
           (review(a)?.score ?? a.fit_score ?? 0),
@@ -294,9 +330,9 @@ function listPage(nav) {
   selectedJobID = selected?.id || "";
 
   shell(
-    `<div class="intro"><div><div class="eyebrow">YOUR JOB SEARCH, IN FOCUS</div><h1>${nav === "local" ? "Explore roles by location." : nav === "best-fit" ? "Your best matches." : nav === "saved" ? "Your saved opportunities." : "Find your next opportunity."}</h1><p>${nav === "local" ? "Choose any county, town or advertised location below." : nav === "best-fit" ? "Roles scoring 60+ against your selected CV, within your chosen location and job type." : nav === "saved" ? "Keep promising roles and track where you’ve applied." : "Explore roles across Ireland, across industries. Find your next step."}</p></div><a class="primary" href="#/cvs">Manage CVs ↗</a></div><div class="stats"><div class="stat"><div><small>${nav === "best-fit" ? "Local opportunities" : "Known opportunities"}</small><strong>${base.length}</strong></div><div class="stat-icon">▦</div></div><div class="stat"><div><small>In selected location</small><strong>${state.jobs.filter(j => (listingScope === "all" || j.seen_in_latest_scan !== false) && locationMatches(j,location)).length}</strong></div><div class="stat-icon">⌖</div></div><div class="stat"><div><small>CVs in your library</small><strong>${state.cvs.length}</strong></div><div class="stat-icon">▤</div></div></div>${nav === "best-fit" ? bestFitControls(base) : ""}${scanHealthNotice()}${state.scanned_at && Date.now() - new Date(state.scanned_at) > 18 * 3600000 ? '<div class="banner">The latest snapshot is over 18 hours old. Check the scan workflow; listings may have changed.</div>' : ""}<div class="tabs" role="group" aria-label="Role categories">${categories.map((c) => `<button data-category="${esc(c)}" class="${category === c ? "active" : ""}">${c}</button>`).join("")}</div><div class="role-menu"><label for="role-type">What kind of role are you looking for?</label><select id="role-type"><option value="">Browse all job types</option>${ROLE_TYPES.map(t=>`<option value="${t.id}" ${selectedRoleType===t.id?'selected':''}>${t.label}</option>`).join('')}</select><p class="note">Includes similar job titles within your selected role family. Use search and location to narrow the results.</p></div><div class="filters"><input id="search" class="search" type="search" placeholder="Search job titles, companies or skills…" aria-label="Search jobs" value="${esc(query)}"><select id="listing-scope" aria-label="Listing freshness"><option value="all" ${listingScope==='all'?'selected':''}>All known listings</option><option value="latest" ${listingScope==='latest'?'selected':''}>Seen in latest scan only</option></select><select id="location" aria-label="Location">${["All locations", ...COUNTIES, "Remote", ...new Set(state.jobs.map(j=>j.location).filter(Boolean))].map((l) => `<option ${location === l ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>${cvSelect()}</div><div class="result-heading"><span><strong>${jobs.length} opportunities</strong> <span class="muted">· Last scan ${date(state.scanned_at)}</span></span><select id="sort" aria-label="Sort jobs">${[
+    `<div class="intro"><div><div class="eyebrow">YOUR JOB SEARCH, IN FOCUS</div><h1>${nav === "unseen" ? "New roles you haven’t opened." : nav === "local" ? "Explore roles by location." : nav === "best-fit" ? "Your best matches." : nav === "saved" ? "Your saved opportunities." : "Find your next opportunity."}</h1><p>${nav === "unseen" ? "Only roles added by scans after Unseen launched appear here. Existing listings stay out. Opening a role marks it as seen in this browser." : nav === "local" ? "Choose any county, town or advertised location below." : nav === "best-fit" ? "Roles scoring 60+ against your selected CV, within your chosen location and job type." : nav === "saved" ? "Keep promising roles and track where you’ve applied." : "Explore roles across Ireland, across industries. Find your next step."}</p></div><a class="primary" href="#/cvs">Manage CVs ↗</a></div><div class="stats"><div class="stat"><div><small>${nav === "unseen" ? "Unseen opportunities" : nav === "best-fit" ? "Local opportunities" : "Known opportunities"}</small><strong>${base.length}</strong></div><div class="stat-icon">▦</div></div><div class="stat"><div><small>In selected location</small><strong>${state.jobs.filter(j => (listingScope === "all" || j.seen_in_latest_scan !== false) && locationMatches(j,location)).length}</strong></div><div class="stat-icon">⌖</div></div><div class="stat"><div><small>CVs in your library</small><strong>${state.cvs.length}</strong></div><div class="stat-icon">▤</div></div></div>${nav === "best-fit" ? bestFitControls(base) : ""}${scanHealthNotice()}${state.scanned_at && Date.now() - new Date(state.scanned_at) > 18 * 3600000 ? '<div class="banner">The latest snapshot is over 18 hours old. Check the scan workflow; listings may have changed.</div>' : ""}<div class="tabs" role="group" aria-label="Role categories">${categories.map((c) => `<button data-category="${esc(c)}" class="${category === c ? "active" : ""}">${c}</button>`).join("")}</div><div class="role-menu"><label for="role-type">What kind of role are you looking for?</label><select id="role-type"><option value="">Browse all job types</option>${ROLE_TYPES.map(t=>`<option value="${t.id}" ${selectedRoleType===t.id?'selected':''}>${t.label}</option>`).join('')}</select><p class="note">Includes similar job titles within your selected role family. Use search and location to narrow the results.</p></div><div class="filters"><input id="search" class="search" type="search" placeholder="Search job titles, companies or skills…" aria-label="Search jobs" value="${esc(query)}"><select id="listing-scope" aria-label="Listing freshness"><option value="all" ${listingScope==='all'?'selected':''}>All known listings</option><option value="latest" ${listingScope==='latest'?'selected':''}>Seen in latest scan only</option></select><select id="location" aria-label="Location">${["All locations", ...COUNTIES, "Remote", ...new Set(state.jobs.map(j=>j.location).filter(Boolean))].map((l) => `<option ${location === l ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>${cvSelect()}</div><div class="result-heading"><span><strong>${jobs.length} opportunities</strong> <span class="muted">· Last scan ${date(state.scanned_at)}</span></span><select id="sort" aria-label="Sort jobs">${[
       ["fit", "Best match"],
-      ["newest", "Latest seen"],
+      ["newest", nav === "unseen" ? "Newest added" : "Latest seen"],
       ["company", "Company A–Z"],
     ]
       .map(
@@ -308,7 +344,7 @@ function listPage(nav) {
         .slice((page - 1) * 15, page * 15)
         .map(jobCard)
         .join("") ||
-      (nav === "best-fit" ? '<div class="empty"><h2>No reviewed matches for these filters</h2><p>Choose your CV below the filters, then use Find my best matches. This page shows reviewed roles scoring 60+; unreviewed roles remain in All jobs.</p></div>' : '<div class="empty"><h2>No roles here yet</h2><p>Try another category or clear your filters. Save jobs from All jobs to build your shortlist.</p></div>')
+      (nav === "unseen" ? '<div class="empty"><h2>You’re all caught up</h2><p>New roles will appear here after future scans. Existing listings are available in All jobs.</p></div>' : nav === "best-fit" ? '<div class="empty"><h2>No reviewed matches for these filters</h2><p>Choose your CV below the filters, then use Find my best matches. This page shows reviewed roles scoring 60+; unreviewed roles remain in All jobs.</p></div>' : '<div class="empty"><h2>No roles here yet</h2><p>Try another category or clear your filters. Save jobs from All jobs to build your shortlist.</p></div>')
     }</div><div class="pagination"><button id="previous" ${page === 1 ? "disabled" : ""}>← Previous</button><span>${page} / ${pages}</span><button id="next" ${page === pages ? "disabled" : ""}>Next →</button></div></div>${selected ? jobPreview(selected) : ""}</div><p class="note">Role suggestions match job-title families. Availability and requirements should be confirmed in the original advert. Add your CV for a personal AI review. Visitor CVs and results stay in this tab.</p>`,
     nav,
   );
@@ -389,7 +425,7 @@ function quickSummary(j) {
 }
 
 function jobPreview(j) {
-  return `<aside class="job-preview panel" aria-label="Selected job details"><div class="preview-top"><span class="chip">${esc(j.category)}</span><span class="muted">${localJob(j)?"Cork & Kerry":"Ireland"}</span></div><div class="company-logo">${esc(j.company?.slice(0,2).toUpperCase()||"IT")}</div><h2>${esc(j.title)}</h2><p class="preview-company">${esc(j.company)} · ${esc(j.location)}</p><div class="header-actions"><a class="primary" href="#/job/${encodeURIComponent(j.id)}">View role details</a><a class="preview-apply" href="${esc(j.url)}" target="_blank" rel="noopener noreferrer">Apply on company site ↗</a></div><div class="preview-facts"><span>${esc(j.experience||"Experience not specified")}</span><span>Last seen ${date(j.last_seen)}</span></div>${quickSummary(j)}<details class="full-advert"><summary>Read full job description</summary><div class="description">${descriptionHTML(j.full_description || j.description||"Open the original advert for the full job description.")}</div></details><a class="text-link" href="#/job/${encodeURIComponent(j.id)}">See your CV strengths and gaps →</a></aside>`;
+  return `<aside class="job-preview panel" aria-label="Selected job details"><div class="preview-top"><span class="chip">${esc(j.category)}</span><span class="muted">${localJob(j)?"Cork & Kerry":"Ireland"}</span></div><div class="company-logo">${esc(j.company?.slice(0,2).toUpperCase()||"IT")}</div><h2>${esc(j.title)}</h2><p class="preview-company">${esc(j.company)} · ${esc(j.location)}</p><div class="header-actions"><a class="primary" href="#/job/${encodeURIComponent(j.id)}">View role details</a><a class="preview-apply" data-role-open="${esc(j.id)}" href="${esc(j.url)}" target="_blank" rel="noopener noreferrer">Apply on company site ↗</a></div><div class="preview-facts"><span>${esc(j.experience||"Experience not specified")}</span><span>Last seen ${date(j.last_seen)}</span></div>${quickSummary(j)}<details class="full-advert"><summary>Read full job description</summary><div class="description">${descriptionHTML(j.full_description || j.description||"Open the original advert for the full job description.")}</div></details><a class="text-link" href="#/job/${encodeURIComponent(j.id)}">See your CV strengths and gaps →</a></aside>`;
 }
 
 function detail(id) {
@@ -402,6 +438,7 @@ function detail(id) {
     return;
   }
 
+  markSeen(id);
   const r = review(j);
 
   shell(
@@ -597,7 +634,7 @@ function render() {
   if (route === "cvs") cvsPage();
   else if (route === "job") detail(decodeURIComponent(rest.join("/")));
   else listPage(
-    ["jobs", "local", "best-fit", "saved"].includes(route)
+    ["jobs", "unseen", "local", "best-fit", "saved"].includes(route)
       ? route
       : "jobs"
   );
@@ -608,12 +645,13 @@ function locationHash() {
 }
 
 window.addEventListener("hashchange", () => {
-  if (["local", "best-fit"].includes(locationHash()[0])) {
+  if (["unseen", "local", "best-fit"].includes(locationHash()[0])) {
     location = "All locations";
     category = "All roles";
     query = "";
-    sort = "fit";
+    sort = locationHash()[0] === "unseen" ? "newest" : "fit";
   }
+  selectedJobID = '';
   page = 1;
   render();
   window.scrollTo(0, 0);

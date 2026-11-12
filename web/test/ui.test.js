@@ -43,12 +43,13 @@ const jobs = [
   },
 ];
 jobs[0].quick_summary = {overview:'Provide employee IT support.',responsibilities:['Resolve user issues'],requirements:['Windows experience'],pay:'Not listed',experience:'2+ years',arrangement:'Hybrid',employment:'Not stated',hours:'Not stated',basis:'Highlights from the advert.'};
-async function ui(hash = "#/jobs", workspace = {}, analyze = null) {
+async function ui(hash = "#/jobs", workspace = {}, analyze = null, fixture = {}) {
   const dom = new JSDOM('<div id="app"></div><div id="toast"></div>', {
     url: "http://localhost/" + hash,
     runScripts: "outside-only",
   });
   const w = dom.window;
+  if (fixture.seen) w.localStorage.setItem('parsr-seen-jobs-v1', JSON.stringify(fixture.seen));
   let calls = 0;
   w.pdfjs = { GlobalWorkerOptions: {} };
   w.localJob = localJob;
@@ -56,7 +57,7 @@ async function ui(hash = "#/jobs", workspace = {}, analyze = null) {
   w.fetch = async (url, options) => {
     if (url === "/api/session") return Response.json({owner:workspace.owner ?? true,ai_ready:workspace.ai_ready ?? false});
     if (url === "/jobs.json")
-      return Response.json({ jobs, scanned_at: new Date().toISOString() });
+      return Response.json({ jobs: fixture.feedJobs || jobs, scanned_at: new Date().toISOString() });
     if (url === "/api/analyze") {
       calls++;
       const result = analyze ? analyze(JSON.parse(options.body)) : {};
@@ -76,6 +77,52 @@ async function ui(hash = "#/jobs", workspace = {}, analyze = null) {
   );
   return { w, dom, calls: () => calls };
 }
+
+test('Unseen excludes every existing listing, even when seen in a fresh scan', async () => {
+  const {w,dom}=await ui('#/unseen');
+  assert.equal(w.document.querySelectorAll('.job').length,0);
+  assert.match(w.document.querySelector('.empty').textContent,/caught up/);
+  assert.match(w.document.querySelector('a[href="#/unseen"].active').textContent,/Unseen \(0\)/);
+  dom.window.close();
+});
+
+test('new scan additions stay unseen until explicitly opened; seen status survives reload', async () => {
+  const feedJobs=[jobs[0],{...jobs[1],first_indexed_at:'2026-11-12T23:00:00Z'}];
+  const {w,dom}=await ui('#/unseen',{},null,{feedJobs});
+  assert.equal(w.document.querySelectorAll('.job').length,1);
+  // Showing the default preview does not count as the user opening the role.
+  assert.equal(w.localStorage.getItem('parsr-seen-jobs-v1'),null);
+  w.document.querySelector('[data-preview="b"]').click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(w.location.hash,'#/job/b');
+  const seen=JSON.parse(w.localStorage.getItem('parsr-seen-jobs-v1'));
+  assert.deepEqual(seen,['b']);
+  w.location.hash='#/unseen';
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(w.document.querySelectorAll('.job').length,0);
+  dom.window.close();
+  const reopened=await ui('#/unseen',{},null,{feedJobs,seen});
+  assert.equal(reopened.w.document.querySelectorAll('.job').length,0);
+  reopened.dom.window.close();
+});
+
+test('opening a new role from All jobs or a direct link removes it from Unseen', async () => {
+  const feedJobs=[{...jobs[0],first_indexed_at:'2026-11-12T23:00:00Z'},jobs[1]];
+  for(const route of ['#/jobs','#/job/a']) {
+    const {w,dom}=await ui(route,{},null,{feedJobs});
+    if(route==='#/jobs') w.document.querySelector('[data-preview="a"]').click();
+    assert.equal(JSON.parse(w.localStorage.getItem('parsr-seen-jobs-v1'))[0],'a');
+    dom.window.close();
+  }
+});
+
+test('Unseen updates when a role is opened in another browser tab', async () => {
+  const feedJobs=[{...jobs[0],first_indexed_at:'2026-11-12T23:00:00Z'}];
+  const {w,dom}=await ui('#/unseen',{},null,{feedJobs});
+  w.dispatchEvent(new w.StorageEvent('storage',{key:'parsr-seen-jobs-v1',newValue:'["a"]'}));
+  assert.equal(w.document.querySelectorAll('.job').length,0);
+  dom.window.close();
+});
 test("job browser renders real rows, escapes external text, filters by category", async () => {
   const { w, dom } = await ui();
   assert.equal(w.document.querySelectorAll(".job").length, 3);

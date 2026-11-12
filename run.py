@@ -169,6 +169,13 @@ def scan(dry_run: bool = False, list_only: bool = False, backfill: bool = False,
                   'experience':assessment['experience'],'posted':j.get('posted',''),
                   'provider':j['provider'],'description':assessment['description'],
                   'full_description':j.get('description',''), 'salary':j.get('salary',''), 'last_seen':utc_now()}
+        previous = job_index.get(j['id'])
+        # The existing index is the Unseen baseline. Only genuinely new IDs get
+        # a timestamp; seeing or editing an old role must never make it new.
+        if previous is None:
+            record['first_indexed_at'] = record['last_seen']
+        elif previous.get('first_indexed_at'):
+            record['first_indexed_at'] = previous['first_indexed_at']
         if job_index.get(j['id']) != record:
             job_index[j['id']] = record
             index_changed = True
