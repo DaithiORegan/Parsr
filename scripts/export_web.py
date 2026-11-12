@@ -59,7 +59,7 @@ def export(state):
         text = readable_text(j.get('full_description') or j.get('description', ''))
         title = j.get('title', '')
         category = j.get('category', 'Other IT')
-        if category != 'Cybersecurity' and 'analyst' in title.lower():
+        if category in ('IT Support / Technical','Graduate / Junior') and 'analyst' in title.lower():
             category = 'Analyst'
         elif category == 'Graduate / Junior':
             category = 'Graduate & Junior'

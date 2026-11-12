@@ -199,10 +199,11 @@ def recruitee(session: requests.Session, source: dict[str, str]) -> list[dict[st
     return result
 
 
-# Fewer than 100 daily Jooble requests: 8 terms x 2 pages x 2 scheduled scans = 32.
+# Fewer than 100 daily Jooble requests: 16 terms x 2 pages x 2 scheduled scans = 64.
 JOOBLE_TERMS = (
     "IT support", "technical support", "helpdesk", "cybersecurity",
     "network engineer", "systems administrator", "IT technician", "SOC analyst",
+    "administrator", "accountant", "sales", "marketing", "nurse", "retail", "warehouse", "customer service",
 )
 
 

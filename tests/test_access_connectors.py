@@ -45,7 +45,7 @@ class AccessTests(TestCase):
                   "company":"Irish IT Co", "salary":"€35,000"}]})
         with patch.dict(os.environ, {"JOOBLE_API_KEY":"super-secret-test-key"}):
             ses=Session(); jobs=jooble(ses,{"provider":"jooble","slug":"ireland","company":"Jooble"})
-        self.assertEqual(len(ses.calls),8)
+        self.assertEqual(len(ses.calls),16)
         self.assertEqual(jobs[0]['company'],'Irish IT Co')
         self.assertEqual(jobs[0]['id'],'jooble:ireland:5')
         self.assertEqual(ses.calls[0][1]['location'],'Ireland')

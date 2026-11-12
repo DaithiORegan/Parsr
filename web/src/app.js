@@ -3,6 +3,7 @@ import * as pdfjs from "pdfjs-dist/build/pdf.mjs";
 import mammoth from "mammoth/mammoth.browser.js";
 import { localJob } from "./core.js";
 import { ROLE_TYPES, roleRelevance } from "./role-types.js";
+import { COUNTIES, locationMatches } from "./locations.js";
 import { descriptionHTML } from "./description.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.mjs";
@@ -52,6 +53,7 @@ const categories = [
   "Analyst",
   "Cloud & Infrastructure",
   "Graduate & Junior",
+  "Administration", "Finance", "HR & Recruitment", "Sales & Marketing", "Healthcare & Care", "Retail & Hospitality", "Operations & Logistics", "Construction & Trades", "Education", "Customer Service",
 ];
 
 const app = $("#app");
@@ -80,7 +82,11 @@ async function api(path, options = {}) {
 async function refresh() {
   const session = await api("session");
   state.owner = !!session.owner;
-  if(!state.owner) {state.cvs=[];state.status=[];state.analyses=[];state.ai_ready=false;return;}
+  if(!state.owner) {
+    let saved={};try{saved=JSON.parse(sessionStorage.getItem('parsr-visitor')||'{}');}catch{}
+    state.cvs=Array.isArray(saved.cvs)?saved.cvs:[];state.analyses=Array.isArray(saved.analyses)?saved.analyses:[];
+    state.status=[];state.ai_ready=!!session.ai_ready;activeCV=state.cvs.some(c=>c.id===activeCV)?activeCV:state.cvs[0]?.id||'';return;
+  }
   const w = await api("workspace");
   Object.assign(state, w);
   if (!state.cvs.some((c) => c.id === activeCV))
@@ -88,6 +94,16 @@ async function refresh() {
   localStorage.setItem("activeCV", activeCV);
 }
 
+function saveVisitor() {
+  if(!state.owner) sessionStorage.setItem('parsr-visitor',JSON.stringify({cvs:state.cvs,analyses:state.analyses}));
+}
+async function analyzeRole(jobID,cvID) {
+  if(state.owner) return api('analyze',{method:'POST',body:JSON.stringify({cv_id:cvID,job_id:jobID})});
+  const cv=state.cvs.find(c=>c.id===cvID);
+  if(!cv)throw Error('Add a CV in this browser tab first.');
+  const result=await api('visitor/analyze',{method:'POST',body:JSON.stringify({cv_text:cv.text,cv_name:cv.name,job_id:jobID})});
+  state.analyses.push({job_id:jobID,cv_id:cvID,result});saveVisitor();return result;
+}
 const review = (j) =>
   state.analyses.findLast(
     (a) =>
@@ -105,7 +121,7 @@ function cvSelect() {
 }
 
 function shell(content, nav) {
-  const ownerLinks = state.owner ? [["best-fit", "✧", "Best Fit"],["saved", "♡", "Saved jobs"],["cvs", "▤", "My CVs"]] : [];
+  const ownerLinks = state.owner ? [["best-fit", "✧", "Best Fit"],["saved", "♡", "Saved jobs"],["cvs", "▤", "My CVs"]] : [["best-fit","✧","Best Fit"],["cvs","▤","My CV / AI review"]];
   app.innerHTML = `<div class="shell"><aside class="sidebar"><a href="#/jobs" class="brand">
   <img
     src="/parsr-logo.png"
@@ -114,11 +130,11 @@ function shell(content, nav) {
   />
   <span>
     Parsr
-    <small>AI · ATS WORKSPACE</small>
+    <small>JOBS · CV MATCHING</small>
   </span>
 </a><div class="navlabel">YOUR WORKSPACE</div><nav class="nav" aria-label="Main navigation">${[
     ["jobs", "▦", "All jobs"],
-    ["local", "⌖", "Cork / Kerry"],
+    ["local", "⌖", "By location"],
     ...ownerLinks,
   ]
     .map(
@@ -186,20 +202,20 @@ async function setStatus(id, value) {
 
 function bestFitControls(jobs) {
   const reviewed = jobs.filter(j => review(j)).length;
-  return `<section class="panel match-controls"><h3>Match these roles to your CV</h3><p>Gemini reviews each local role against the selected CV. ${reviewed} of ${jobs.length} roles reviewed. Unchanged reviews are reused.</p><button id="find-matches" class="primary" ${!activeCV||!state.ai_ready||matchingCV||busy?'disabled':''}>${matchingCV?'Reviewing local roles…':'Find my best matches'}</button><p class="note" role="status">${esc(matchingProgress || (!activeCV?'Add or select a CV to start.':!state.ai_ready?'Configure the Gemini API key to start matching.':'This sends CV and role text to Gemini. Up to 30 new reviews per hour; you can continue later if the limit is reached.'))}</p></section>`;
+  return `<section class="panel match-controls"><h3>Match these roles to your CV</h3><p>Gemini reviews roles in the selected location and job family against your CV. ${reviewed} of ${jobs.length} roles reviewed. Unchanged reviews are reused.</p><button id="find-matches" class="primary" ${!activeCV||!state.ai_ready||matchingCV||busy?'disabled':''}>${matchingCV?'Reviewing selected roles…':'Find my best matches'}</button><p class="note" role="status">${esc(matchingProgress || (!activeCV?'Add or select a CV to start.':!state.ai_ready?'Configure the Gemini API key to start matching.':(state.owner?'This sends CV and role text to Gemini. Up to 30 new reviews per hour.':'CV text goes to Gemini. Visitor limits: 5 attempts/hour and 20/day per network, subject to the site-wide budget.')))}</p></section>`;
 }
 
 async function findBestMatches() {
   if(matchingCV || !activeCV || !state.ai_ready) return;
   const cvID = activeCV;
   const pending = state.jobs.filter(
-    j => j.seen_in_latest_scan !== false && localJob(j) && !review(j)
+    j => j.seen_in_latest_scan !== false && locationMatches(j,location) && roleRelevance(j,selectedRoleType)>0 && !review(j)
   );
 
   matchingCV = cvID;
   matchingProgress = pending.length
-    ? 'Starting local CV reviews…'
-    : 'All local roles already reviewed.';
+    ? 'Starting CV reviews…'
+    : 'All selected roles already reviewed.';
   render();
 
   let completed = 0;
@@ -210,15 +226,12 @@ async function findBestMatches() {
       matchingProgress = `Reviewing role ${completed+1} of ${pending.length}…`;
       render();
 
-      const result = await api('analyze', {
-        method: 'POST',
-        body: JSON.stringify({cv_id:cvID,job_id:job.id})
-      });
+      const result = await analyzeRole(job.id,cvID);
 
-      state.analyses.push({job_id:job.id,cv_id:cvID,result});
+      if(state.owner)state.analyses.push({job_id:job.id,cv_id:cvID,result});
       completed++;
     }
-    matchingProgress = `${completed} reviews completed. Matching roles appear below; other local roles remain on Cork / Kerry.`;
+    matchingProgress = `${completed} reviews completed. Matching roles appear below; other roles remain in All jobs.`;
   } catch(e) {
     matchingProgress = `${completed} reviews completed. ${e.message} Saved results are retained; click again later to continue.`;
   } finally {
@@ -230,7 +243,7 @@ async function findBestMatches() {
 function listPage(nav) {
   let jobs = state.jobs
     .filter((j) => nav === "saved" || j.seen_in_latest_scan !== false)
-    .filter((j) => !["best-fit", "local"].includes(nav) || localJob(j))
+
     .filter((j) => nav !== "saved" || ["saved", "applied"].includes(status(j)));
 
   jobs = jobs.filter(j => roleRelevance(j, selectedRoleType) > 0);
@@ -249,9 +262,7 @@ function listPage(nav) {
     .filter(
       (j) =>
         location === "All locations" ||
-        (location === "Cork & Kerry"
-          ? localJob(j)
-          : j.location?.toLowerCase().includes(location.toLowerCase())),
+        locationMatches(j, location),
     );
 
   jobs.sort((a, b) =>
@@ -274,7 +285,7 @@ function listPage(nav) {
   selectedJobID = selected?.id || "";
 
   shell(
-    `<div class="intro"><div><div class="eyebrow">YOUR JOB SEARCH, IN FOCUS</div><h1>${nav === "local" ? "Roles in Cork & Kerry." : nav === "best-fit" ? "Your best matches in Cork & Kerry." : nav === "saved" ? "Your saved opportunities." : "Find your next opportunity."}</h1><p>${nav === "local" ? "All local opportunities, with every role type in one place." : nav === "best-fit" ? "Local roles scoring 60+ against your selected CV, ranked by their AI review." : nav === "saved" ? "Keep promising roles and track where you’ve applied." : "Explore Irish IT roles. Find your fit. Take the next step."}</p></div><a class="primary" href="#/cvs">Manage CVs ↗</a></div><div class="stats"><div class="stat"><div><small>${nav === "best-fit" ? "Local opportunities" : "Jobs in latest scan"}</small><strong>${base.length}</strong></div><div class="stat-icon">▦</div></div><div class="stat"><div><small>Cork & Kerry</small><strong>${state.jobs.filter(j => j.seen_in_latest_scan !== false && localJob(j)).length}</strong></div><div class="stat-icon">⌖</div></div><div class="stat"><div><small>CVs in your library</small><strong>${state.cvs.length}</strong></div><div class="stat-icon">▤</div></div></div>${nav === "best-fit" ? bestFitControls(base) : ""}${state.scanned_at && Date.now() - new Date(state.scanned_at) > 18 * 3600000 ? '<div class="banner">The latest snapshot is over 18 hours old. Check the scan workflow; listings may have changed.</div>' : ""}<div class="tabs" role="group" aria-label="Role categories">${categories.map((c) => `<button data-category="${esc(c)}" class="${category === c ? "active" : ""}">${c}</button>`).join("")}</div><div class="role-menu"><label for="role-type">What kind of role are you looking for?</label><select id="role-type"><option value="">Browse all job types</option>${ROLE_TYPES.map(t=>`<option value="${t.id}" ${selectedRoleType===t.id?'selected':''}>${t.label}</option>`).join('')}</select><p class="note">Includes similar job titles within your selected role family. Use search and location to narrow the results.</p></div><div class="filters"><input id="search" class="search" type="search" placeholder="Search job titles, companies or skills…" aria-label="Search jobs" value="${esc(query)}"><select id="location" aria-label="Location">${["All locations", "Cork & Kerry", "Cork", "Kerry", "Dublin", "Remote"].map((l) => `<option ${location === l ? "selected" : ""}>${l}</option>`).join("")}</select>${cvSelect()}</div><div class="result-heading"><span><strong>${jobs.length} opportunities</strong> <span class="muted">· Last scan ${date(state.scanned_at)}</span></span><select id="sort" aria-label="Sort jobs">${[
+    `<div class="intro"><div><div class="eyebrow">YOUR JOB SEARCH, IN FOCUS</div><h1>${nav === "local" ? "Explore roles by location." : nav === "best-fit" ? "Your best matches." : nav === "saved" ? "Your saved opportunities." : "Find your next opportunity."}</h1><p>${nav === "local" ? "Choose any county, town or advertised location below." : nav === "best-fit" ? "Roles scoring 60+ against your selected CV, within your chosen location and job type." : nav === "saved" ? "Keep promising roles and track where you’ve applied." : "Explore roles across Ireland, across industries. Find your next step."}</p></div><a class="primary" href="#/cvs">Manage CVs ↗</a></div><div class="stats"><div class="stat"><div><small>${nav === "best-fit" ? "Local opportunities" : "Jobs in latest scan"}</small><strong>${base.length}</strong></div><div class="stat-icon">▦</div></div><div class="stat"><div><small>In selected location</small><strong>${state.jobs.filter(j => j.seen_in_latest_scan !== false && locationMatches(j,location)).length}</strong></div><div class="stat-icon">⌖</div></div><div class="stat"><div><small>CVs in your library</small><strong>${state.cvs.length}</strong></div><div class="stat-icon">▤</div></div></div>${nav === "best-fit" ? bestFitControls(base) : ""}${state.scanned_at && Date.now() - new Date(state.scanned_at) > 18 * 3600000 ? '<div class="banner">The latest snapshot is over 18 hours old. Check the scan workflow; listings may have changed.</div>' : ""}<div class="tabs" role="group" aria-label="Role categories">${categories.map((c) => `<button data-category="${esc(c)}" class="${category === c ? "active" : ""}">${c}</button>`).join("")}</div><div class="role-menu"><label for="role-type">What kind of role are you looking for?</label><select id="role-type"><option value="">Browse all job types</option>${ROLE_TYPES.map(t=>`<option value="${t.id}" ${selectedRoleType===t.id?'selected':''}>${t.label}</option>`).join('')}</select><p class="note">Includes similar job titles within your selected role family. Use search and location to narrow the results.</p></div><div class="filters"><input id="search" class="search" type="search" placeholder="Search job titles, companies or skills…" aria-label="Search jobs" value="${esc(query)}"><select id="location" aria-label="Location">${["All locations", ...COUNTIES, "Remote", ...new Set(state.jobs.map(j=>j.location).filter(Boolean))].map((l) => `<option ${location === l ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>${cvSelect()}</div><div class="result-heading"><span><strong>${jobs.length} opportunities</strong> <span class="muted">· Last scan ${date(state.scanned_at)}</span></span><select id="sort" aria-label="Sort jobs">${[
       ["fit", "Best match"],
       ["newest", "Latest seen"],
       ["company", "Company A–Z"],
@@ -288,14 +299,14 @@ function listPage(nav) {
         .slice((page - 1) * 15, page * 15)
         .map(jobCard)
         .join("") ||
-      (nav === "best-fit" ? '<div class="empty"><h2>No reviewed matches yet</h2><p>Choose your CV below the filters, then use Find my best matches. This page shows reviewed local roles scoring 60+; unreviewed roles remain on Cork / Kerry.</p></div>' : '<div class="empty"><h2>No roles here yet</h2><p>Try another category or clear your filters. Save jobs from All jobs to build your shortlist.</p></div>')
-    }</div><div class="pagination"><button id="previous" ${page === 1 ? "disabled" : ""}>← Previous</button><span>${page} / ${pages}</span><button id="next" ${page === pages ? "disabled" : ""}>Next →</button></div></div>${selected ? jobPreview(selected) : ""}</div><p class="note">Role suggestions match job-title families. Availability and requirements should be confirmed in the original advert. Private CV reviews are available in the owner workspace.</p>`,
+      (nav === "best-fit" ? '<div class="empty"><h2>No reviewed matches for these filters</h2><p>Choose your CV below the filters, then use Find my best matches. This page shows reviewed roles scoring 60+; unreviewed roles remain in All jobs.</p></div>' : '<div class="empty"><h2>No roles here yet</h2><p>Try another category or clear your filters. Save jobs from All jobs to build your shortlist.</p></div>')
+    }</div><div class="pagination"><button id="previous" ${page === 1 ? "disabled" : ""}>← Previous</button><span>${page} / ${pages}</span><button id="next" ${page === pages ? "disabled" : ""}>Next →</button></div></div>${selected ? jobPreview(selected) : ""}</div><p class="note">Role suggestions match job-title families. Availability and requirements should be confirmed in the original advert. Add your CV for a personal AI review. Visitor CVs and results stay in this tab.</p>`,
     nav,
   );
   if(!state.owner) {
     document.querySelector('.intro a[href="#/cvs"]')?.remove();
-    document.querySelector('.stat:last-child')?.remove();
-    document.querySelector('#active-cv')?.remove();
+
+
     document.querySelector('.job-preview > .text-link')?.remove();
   }
 
@@ -403,8 +414,8 @@ function detail(id) {
   );
 
   if(!state.owner) {
-    document.querySelector('.grid-two>aside')?.remove();
-    document.querySelector('.grid-two')?.classList.add('public-detail');
+
+
     document.querySelector('#mark-applied')?.setAttribute('hidden','');
   }
   $("#mark-applied").onclick = () =>
@@ -419,10 +430,7 @@ function detail(id) {
     busy = true;
     render();
     try {
-      await api("analyze", {
-        method: "POST",
-        body: JSON.stringify({ cv_id: cv, job_id: id }),
-      });
+      await analyzeRole(id,cv);
       await refresh();
       toast("Your CV review is ready.");
     } catch (e) {
@@ -460,7 +468,7 @@ function detail(id) {
 
 function cvsPage() {
   shell(
-    `<div class="intro"><div><div class="eyebrow">MAKE YOUR EXPERIENCE COUNT</div><h1>A CV for every next step.</h1><p>Keep your versions together. Choose the right one for each role.</p></div></div><div class="grid-two"><section class="panel"><h2>Your CV library</h2><p class="note">Up to 20 versions. Extracted text is stored privately; original files are not retained.</p>${state.cvs.map((c) => `<article class="cv-row"><h3>▤ ${esc(c.name)}</h3><small>Added ${date(c.created_at)}</small><div class="job-actions"><button data-use="${esc(c.id)}" ${activeCV === c.id ? "disabled" : ""}>${activeCV === c.id ? "✓ Active CV" : "Use this CV"}</button><button data-delete="${esc(c.id)}">Delete</button></div></article>`).join("") || '<div class="empty"><h3>Your next chapter starts with your CV</h3><p>Upload a PDF or Word document, or paste your CV text.</p></div>'}<p class="note">The original candidate profile still powers baseline estimates. AI reviews compare the CV version you select with each specific role.</p></section><section class="panel"><h2>Add a CV version</h2><form id="cv-form"><label for="cv-name">Version name</label><input id="cv-name" class="full" required maxlength="120" placeholder="e.g. IT Support · November 2026"><label for="cv-file">Upload PDF or DOCX</label><input id="cv-file" class="full" type="file" accept=".pdf,.docx,.txt"><p class="note">Maximum 10 MB. Text is extracted in your browser. For scanned PDFs, paste readable text below.</p><label for="cv-text">Review or paste your CV text</label><textarea id="cv-text" required minlength="100" maxlength="80000" placeholder="Your experience, education, skills and achievements…"></textarea><p class="note">Check the extracted text before saving. Delete a version any time to remove its text and saved AI reviews.</p><button class="primary full" type="submit">Save CV to library</button></form></section></div>`,
+    `<div class="intro"><div><div class="eyebrow">MAKE YOUR EXPERIENCE COUNT</div><h1>A CV for every next step.</h1><p>Keep your versions together. Choose the right one for each role.</p></div></div><div class="grid-two"><section class="panel"><h2>Your CV library</h2><p class="note">${state.owner?"Up to 20 versions in your private library.":"CV text and reviews stay in this browser tab until you delete them or close the tab. No account is needed."} Original files are not retained.</p>${state.cvs.map((c) => `<article class="cv-row"><h3>▤ ${esc(c.name)}</h3><small>Added ${date(c.created_at)}</small><div class="job-actions"><button data-use="${esc(c.id)}" ${activeCV === c.id ? "disabled" : ""}>${activeCV === c.id ? "✓ Active CV" : "Use this CV"}</button><button data-delete="${esc(c.id)}">Delete</button></div></article>`).join("") || '<div class="empty"><h3>Your next chapter starts with your CV</h3><p>Upload a PDF or Word document, or paste your CV text.</p></div>'}<p class="note">Reviews compare your selected CV with each role. For visitors, CV text is sent to Gemini for assessment but is not saved in the server database.</p></section><section class="panel"><h2>Add a CV version</h2><form id="cv-form"><label for="cv-name">Version name</label><input id="cv-name" class="full" required maxlength="120" placeholder="e.g. IT Support · November 2026"><label for="cv-file">Upload PDF or DOCX</label><input id="cv-file" class="full" type="file" accept=".pdf,.docx,.txt"><p class="note">Maximum 10 MB. Text is extracted in your browser. For scanned PDFs, paste readable text below.</p><label for="cv-text">Review or paste your CV text</label><textarea id="cv-text" required minlength="100" maxlength="80000" placeholder="Your experience, education, skills and achievements…"></textarea><p class="note">Check the extracted text before saving. Delete a version any time to remove its text and saved AI reviews.</p><label><input type="checkbox" required> I understand my selected CV text is sent to Google Gemini when I open a role or request Best Fit matching.</label><button class="primary full" type="submit">Use this CV</button></form></section></div>`,
     "cvs",
   );
 
@@ -478,9 +486,8 @@ function cvsPage() {
       (b.onclick = async () => {
         if (!confirm("Delete this CV and its saved AI reviews?")) return;
         try {
-          await api("cvs/" + encodeURIComponent(b.dataset.delete), {
-            method: "DELETE",
-          });
+          if(state.owner) await api("cvs/" + encodeURIComponent(b.dataset.delete), {method:"DELETE"});
+          else {state.cvs=state.cvs.filter(c=>c.id!==b.dataset.delete);state.analyses=state.analyses.filter(a=>a.cv_id!==b.dataset.delete);saveVisitor();}
           await refresh();
           render();
           toast("CV deleted.");
@@ -553,13 +560,13 @@ function cvsPage() {
     const b = e.target.querySelector("button[type=submit]");
     b.disabled = true;
     try {
-      const result = await api("cvs", {
-        method: "POST",
-        body: JSON.stringify({
-          name: $("#cv-name").value,
-          text: $("#cv-text").value,
-        }),
-      });
+      let result;
+      if(state.owner) result=await api("cvs",{method:"POST",body:JSON.stringify({name:$("#cv-name").value,text:$("#cv-text").value})});
+      else {
+        if(state.cvs.length>=20)throw Error('Remove an old CV first; maximum 20 per tab.');
+        result={id:crypto.randomUUID(),name:$("#cv-name").value,text:$("#cv-text").value,created_at:new Date().toISOString()};
+        state.cvs.push(result);saveVisitor();
+      }
       activeCV = result.id;
       await refresh();
       render();
@@ -573,7 +580,7 @@ function cvsPage() {
 
 function render() {
   const [route = "jobs", ...rest] = locationHash();
-  if(!state.owner && ["cvs","saved","best-fit"].includes(route)) {
+  if(!state.owner && ["saved"].includes(route)) {
     shell('<section class="panel"><h1>Private owner workspace</h1><p>CVs, AI reviews and application history require owner sign-in.</p><a class="primary" href="/owner">Owner sign in</a></section>', 'jobs');return;
   }
   if (route === "cvs") cvsPage();

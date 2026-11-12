@@ -1,4 +1,15 @@
 export const ROLE_TYPES = [
+  {"id": "admin", "label": "Administration / Office", "terms": ["administrator", "administrative", "receptionist", "office assistant", "office manager", "executive assistant", "personal assistant"]},
+  {"id": "finance", "label": "Finance / Accounting", "terms": ["accountant", "accounting", "finance", "payroll", "bookkeeper", "accounts payable", "accounts receivable", "financial analyst", "credit controller"]},
+  {"id": "hr", "label": "HR / Recruitment", "terms": ["human resources", "hr advisor", "hr manager", "hr business", "recruiter", "recruitment", "talent acquisition", "people operations"]},
+  {"id": "sales", "label": "Sales / Marketing", "terms": ["sales", "marketing", "account executive", "business development", "digital marketing", "brand manager", "commercial manager"]},
+  {"id": "care", "label": "Healthcare / Social Care", "terms": ["nurse", "nursing", "healthcare assistant", "care assistant", "social care", "social worker", "pharmacist", "physiotherapist", "occupational therapist"]},
+  {"id": "retail", "label": "Retail / Hospitality", "terms": ["retail", "store manager", "shop assistant", "customer assistant", "chef", "waiter", "waitress", "barista", "bartender", "hotel", "hospitality", "housekeeping"]},
+  {"id": "operations", "label": "Operations / Manufacturing", "terms": ["warehouse", "logistics", "supply chain", "production operator", "manufacturing", "procurement", "delivery driver", "forklift", "general operative", "quality technician"]},
+  {"id": "construction", "label": "Construction / Trades", "terms": ["electrician", "plumber", "carpenter", "construction", "quantity surveyor", "site manager", "civil engineer", "maintenance technician", "mechanic"]},
+  {"id": "education", "label": "Education / Training", "terms": ["teacher", "lecturer", "tutor", "training coordinator", "early years", "childcare", "special needs assistant"]},
+  {"id": "customer", "label": "Customer Service", "terms": ["customer service", "customer care", "customer support", "call centre", "contact centre"]},
+
   {id:'it-support',label:'IT Support / Helpdesk',terms:['it support','technical support','helpdesk','help desk','service desk','desktop support','deskside','it technician','support engineer']},
   {id:'soc',label:'SOC / Security Analyst',terms:['soc analyst','security analyst','security operations','incident response','threat analyst','cyber analyst']},
   {id:'cybersecurity',label:'Cybersecurity / GRC',terms:['cyber','security engineer','grc','governance risk','penetration','information security','vulnerability','iam']},

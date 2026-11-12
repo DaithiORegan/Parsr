@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { readFileSync } from "node:fs";
 import { localJob } from "../src/core.js";
+const places = readFileSync(new URL('../src/locations.js', import.meta.url),'utf8').replace(/export /g,'');
 const roles = readFileSync(new URL('../src/role-types.js', import.meta.url),'utf8').replace(/export /g,'');
 const formatter = readFileSync(new URL('../src/description.js', import.meta.url), 'utf8').replace('export function', 'function');
 const source = readFileSync(
@@ -53,7 +54,7 @@ async function ui(hash = "#/jobs", workspace = {}, analyze = null) {
   w.localJob = localJob;
   w.scrollTo = () => {};
   w.fetch = async (url, options) => {
-    if (url === "/api/session") return Response.json({owner:workspace.owner ?? true});
+    if (url === "/api/session") return Response.json({owner:workspace.owner ?? true,ai_ready:workspace.ai_ready ?? false});
     if (url === "/jobs.json")
       return Response.json({ jobs, scanned_at: new Date().toISOString() });
     if (url === "/api/analyze") {
@@ -71,7 +72,7 @@ async function ui(hash = "#/jobs", workspace = {}, analyze = null) {
   };
   // Inject only the import dependencies; test the actual application rendering and handlers.
   await w.eval(
-    `(async()=>{const pdfjs=window.pdfjs;const localJob=window.localJob;${roles};${formatter};${source}})()`,
+    `(async()=>{const pdfjs=window.pdfjs;const localJob=window.localJob;${places};${roles};${formatter};${source}})()`,
   );
   return { w, dom, calls: () => calls };
 }
@@ -91,7 +92,7 @@ test("job browser renders real rows, escapes external text, filters by category"
 test("Best Fit requires CV reviews instead of duplicating local listings", async () => {
   const { w, dom } = await ui("#/best-fit");
   assert.equal(w.document.querySelectorAll(".job").length, 0);
-  assert.match(w.document.body.textContent,/No reviewed matches yet/);
+  assert.match(w.document.body.textContent,/No reviewed matches for these filters/);
   assert.doesNotMatch(
     w.document.querySelector(".jobs").textContent,
     /Data Analyst/,
@@ -132,7 +133,7 @@ test('opening a role automatically starts one review for an active CV', async ()
     if (url === '/api/analyze') { calls++; return Response.json({}); }
     return Response.json({ cvs: [{ id: 'cv1', name: 'Support CV' }], status: [], analyses: [], ai_ready: true });
   };
-  await w.eval(`(async()=>{const pdfjs=window.pdfjs;const localJob=window.localJob;${roles};${formatter};${source}})()`);
+  await w.eval(`(async()=>{const pdfjs=window.pdfjs;const localJob=window.localJob;${places};${roles};${formatter};${source}})()`);
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(calls, 1);
   assert.equal(w.document.querySelector('#active-cv').value, 'cv1');
@@ -148,11 +149,11 @@ test('selecting a job updates the adjacent description panel', async () => {
   dom.window.close();
 });
 
-test('Cork / Kerry is a dedicated navigation page for local roles', async () => {
+test('By location allows browsing before a location is selected', async () => {
   const {w,dom}=await ui('#/local');
-  assert.equal(w.document.querySelectorAll('.job').length,2);
+  assert.equal(w.document.querySelectorAll('.job').length,3);
   assert.ok(w.document.querySelector('a[href="#/local"].active'));
-  assert.doesNotMatch(w.document.querySelector('.jobs').textContent,/Data Analyst/);
+
   dom.window.close();
 });
 
@@ -176,8 +177,8 @@ test('Best Fit uses only the selected CV and current reviewed jobs above thresho
       {job_id:'b',cv_id:'cv2',result:matchResult(jobs[1],95)},
       {job_id:'c',cv_id:'cv1',result:matchResult(jobs[2],99)}]};
   const {w,dom}=await ui('#/best-fit',workspace);
-  assert.equal(w.document.querySelectorAll('.job').length,1);
-  assert.match(w.document.querySelector('.job').textContent,/IT Support/);
+  assert.equal(w.document.querySelectorAll('.job').length,2);
+  assert.match(w.document.querySelector('.job').textContent,/Data Analyst/);
   const select=w.document.querySelector('#active-cv');select.value='cv2';select.dispatchEvent(new w.Event('change'));
   assert.equal(w.document.querySelectorAll('.job').length,1);
   assert.match(w.document.querySelector('.job').textContent,/Security Analyst/);
@@ -190,11 +191,11 @@ test('Find best matches reviews unreviewed local roles via analyze and reuses re
   });
   w.document.querySelector('#find-matches').click();
   await new Promise(resolve=>setTimeout(resolve,30));
-  assert.equal(calls(),2);assert.ok(reviewed.every(b=>b.cv_id==='cv1'&&b.job_id!=='c'));
+  assert.equal(calls(),3);assert.ok(reviewed.every(b=>b.cv_id==='cv1'));
   assert.match(w.document.querySelector('.job').textContent,/Security Analyst/);
-  assert.equal(w.document.querySelectorAll('.job').length,2);
+  assert.equal(w.document.querySelectorAll('.job').length,3);
   w.document.querySelector('#find-matches').click();
-  await new Promise(resolve=>setTimeout(resolve,10));assert.equal(calls(),2);
+  await new Promise(resolve=>setTimeout(resolve,10));assert.equal(calls(),3);
   dom.window.close();
 });
 
@@ -211,13 +212,13 @@ test('Best Fit retains partial reviews on quota failure and resumes missing jobs
   assert.match(w.document.querySelector('.match-controls').textContent,/Gemini quota reached/);
   w.document.querySelector('#find-matches').click();
   await new Promise(resolve=>setTimeout(resolve,30));
-  assert.equal(calls(),3);assert.equal(w.document.querySelectorAll('.job').length,2);
+  assert.equal(calls(),4);assert.equal(w.document.querySelectorAll('.job').length,3);
   dom.window.close();
 });
 
 test('public job-type menu returns related titles without owner features',async()=>{
   const {w,dom}=await ui('#/jobs',{owner:false});
-  assert.ok(!w.document.querySelector('.nav a[href="#/cvs"]'));
+  assert.ok(w.document.querySelector('.nav a[href="#/cvs"]'));
   const select=w.document.querySelector('#role-type');select.value='soc';select.dispatchEvent(new w.Event('change'));
   assert.equal(w.document.querySelectorAll('.job').length,1);
   assert.match(w.document.querySelector('.job').textContent,/Security Analyst/);
@@ -225,7 +226,27 @@ test('public job-type menu returns related titles without owner features',async(
 });
 test('public detail never displays CV information',async()=>{
   const {w,dom}=await ui('#/job/a',{owner:false});
-  assert.equal(w.document.querySelector('.grid-two>aside'),null);
+  assert.ok(w.document.querySelector('.grid-two>aside'));
   assert.equal(w.document.querySelector('#mark-applied').hidden,true);
+  dom.window.close();
+});
+
+test('location menu selects Dublin independently of Cork and Kerry',async()=>{
+  const {w,dom}=await ui('#/jobs');const select=w.document.querySelector('#location');
+  select.value='Dublin';select.dispatchEvent(new w.Event('change'));
+  assert.equal(w.document.querySelectorAll('.job').length,1);
+  assert.match(w.document.querySelector('.job').textContent,/Data Analyst/);
+  dom.window.close();
+});
+test('visitor saves their CV only in the current tab',async()=>{
+  const {w,dom}=await ui('#/cvs',{owner:false});
+  w.document.querySelector('#cv-name').value='Visitor version';
+  w.document.querySelector('#cv-text').value='Visitor work experience. '.repeat(12);
+  w.document.querySelector('#cv-form input[type=checkbox]').checked=true;
+  w.document.querySelector('#cv-form').dispatchEvent(new w.Event('submit',{cancelable:true,bubbles:true}));
+  await new Promise(resolve=>setTimeout(resolve,20));
+  const stored=JSON.parse(w.sessionStorage.getItem('parsr-visitor'));
+  assert.equal(stored.cvs.length,1);assert.equal(stored.cvs[0].name,'Visitor version');
+  assert.match(w.document.querySelector('.cv-row').textContent,/Visitor version/);
   dom.window.close();
 });

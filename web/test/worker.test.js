@@ -26,8 +26,8 @@ function database() {
         return { results: sql.prepare(query).all(...values) };
       },
       async run() {
-        sql.prepare(query).run(...values);
-        return { success: true };
+        const result=sql.prepare(query).run(...values);
+        return { success: true, meta:{changes:Number(result.changes)} };
       },
     };
   };
@@ -372,4 +372,26 @@ test('public browsing leaves CVs, AI calls and diagnostics owner-only',async()=>
   e.ASSETS.fetch=async()=>Response.json({jobs:[{id:'j',title:'Support',fit_score:95,matched_skills:['personal']} ]});
   const feed=await (await worker.fetch(request('/jobs.json'),e)).json();
   assert.equal(feed.jobs[0].fit_score,undefined);assert.equal(feed.jobs[0].matched_skills,undefined);
+});
+
+test('visitor analysis is stateless, isolated from owner CVs, and usage-limited',async()=>{
+  const e=env();e.GEMINI_API_KEY='test';e.APP_PASSWORD='long-private-owner-password';
+  await e.DB.prepare('INSERT INTO cvs VALUES (?,?,?,?)').bind('owner-cv','Owner','OWNER PRIVATE TEXT','now').run();
+  const original=globalThis.fetch;let calls=0;
+  globalThis.fetch=async(url,options)=>{
+    calls++;const b=JSON.parse(options.body);
+    assert.ok(b.contents[0].parts[0].text.includes('Visitor work experience'));
+    assert.ok(!options.body.includes('OWNER PRIVATE TEXT'));
+    return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(review)}]}}]});
+  };
+  try {
+    const data={job_id:job.id,cv_id:'owner-cv',cv_text:'Visitor work experience with Windows. '.repeat(6),cv_name:'Visitor CV'};
+    for(let i=0;i<5;i++)assert.equal((await worker.fetch(req('/api/visitor/analyze','POST',data),e)).status,200);
+    assert.equal((await worker.fetch(req('/api/visitor/analyze','POST',data),e)).status,429);
+    assert.equal(calls,5);
+    assert.equal((await e.DB.prepare('SELECT COUNT(*) AS n FROM cvs').first()).n,1);
+    assert.equal((await e.DB.prepare('SELECT COUNT(*) AS n FROM analyses').first()).n,0);
+    const records=await e.DB.prepare('SELECT * FROM visitor_limits').all();
+    const stored=JSON.stringify(records);assert.ok(!stored.includes('Visitor work experience'));assert.ok(!stored.includes('localhost'));
+  } finally {globalThis.fetch=original;}
 });
